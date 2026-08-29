@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="service_desc">Watches which app is in the foreground and blocks apps that are over their time budget. All data stays on this device.</string>
+</resources>
