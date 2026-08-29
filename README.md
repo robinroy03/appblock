@@ -11,10 +11,11 @@ No dependencies, no network, no analytics. Four Kotlin files:
 
 | File                 | What it does                                                               |
 | -------------------- | -------------------------------------------------------------------------- |
-| `MainActivity.kt`    | Settings screen: app list + budget fields + save                           |
-| `BlockerService.kt`  | Accessibility service that watches the foreground app and enforces budgets |
-| `BlockedActivity.kt` | The full-screen "blocked" wall                                             |
-| `Storage.kt`         | Rules + usage log as JSON in SharedPreferences                             |
+| `MainActivity.kt`      | Home screen: blocked apps with editable budgets (auto-saved)               |
+| `AppPickerActivity.kt` | "Block an app" picker: all installed apps with checkboxes                  |
+| `BlockerService.kt`    | Accessibility service that watches the foreground app and enforces budgets |
+| `BlockedActivity.kt`   | The full-screen "blocked" wall                                             |
+| `Storage.kt`           | Rules + usage log as JSON in SharedPreferences                             |
 
 ## Build
 
@@ -27,11 +28,35 @@ Needs Java 17 and the Android SDK (`sdk.dir` in `local.properties`).
 ./gradlew test   # unit tests for the rolling-window math
 ```
 
-## Install & setup (once)
+## Install (via adb — read this, it saves you two roadblocks)
 
-1. Copy the APK to the phone and tap it (allow "install unknown apps" when prompted).
-2. Open AppBlock → tap **Enable accessibility service** → turn on AppBlock.
-3. Check apps, set budgets, hit **Save rules**.
+Don't install by copying the APK to the phone and tapping it. Two Android guards
+will fight you, because this is a sideloaded, debug-signed APK that requests an
+accessibility service:
+
+1. **Google Play Protect** blocks the install ("app blocked to protect your device") —
+   it flags any APK from an unrecognized developer, especially ones using accessibility.
+2. Even after installing, **Android 13+ "Restricted setting"** refuses to let a
+   file-manager-installed app have accessibility access.
+
+Installing over USB with `adb` avoids **both**: Play Protect doesn't gate adb installs,
+and adb-installed apps are exempt from the restricted-settings block.
+
+One-time phone setup: Settings → About device → tap **Build number** 7 times to unlock
+Developer options, then Settings → System → **Developer options** → enable
+**USB debugging**. Plug the phone into the computer and accept the
+"Allow USB debugging?" prompt on the phone.
+
+```sh
+adb install appblock.apk   # adb ships with the Android SDK platform-tools
+```
+
+## Setup (once)
+
+1. Open AppBlock → tap **Enable accessibility service** → turn on AppBlock.
+   (The button disappears once granted.)
+2. Tap **+ Block an app**, check the apps you want, hit **Block selected apps**.
+3. Adjust each app's budget on the home screen — changes save automatically.
 4. OnePlus/OxygenOS kills background services: Settings → Apps → AppBlock →
    Battery → set to **Unrestricted / Don't optimize**.
 

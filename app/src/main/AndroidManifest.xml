@@ -23,6 +23,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".AppPickerActivity"
+            android:exported="false"
+            android:label="Choose apps to block" />
+
         <!-- The "you're blocked" wall. noHistory so it never lingers in the back stack. -->
         <activity
             android:name=".BlockedActivity"
