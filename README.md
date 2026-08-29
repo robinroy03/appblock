@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> This was written entirely with AI, and I haven't verified any of the code. Please use it with caution — though I do trust [Claude's Plan](https://www.youtube.com/watch?v=gFx-NjTw3sM).
+
 # appblock
 
 Personal Android app blocker — like [siteblock](https://github.com/csapuntz/siteblock), but for apps.
@@ -6,12 +9,12 @@ is spent, opening the app bounces you to a "blocked, try again in N min" screen.
 
 No dependencies, no network, no analytics. Four Kotlin files:
 
-| File | What it does |
-|---|---|
-| `MainActivity.kt` | Settings screen: app list + budget fields + save |
-| `BlockerService.kt` | Accessibility service that watches the foreground app and enforces budgets |
-| `BlockedActivity.kt` | The full-screen "blocked" wall |
-| `Storage.kt` | Rules + usage log as JSON in SharedPreferences |
+| File                 | What it does                                                               |
+| -------------------- | -------------------------------------------------------------------------- |
+| `MainActivity.kt`    | Settings screen: app list + budget fields + save                           |
+| `BlockerService.kt`  | Accessibility service that watches the foreground app and enforces budgets |
+| `BlockedActivity.kt` | The full-screen "blocked" wall                                             |
+| `Storage.kt`         | Rules + usage log as JSON in SharedPreferences                             |
 
 ## Build
 
