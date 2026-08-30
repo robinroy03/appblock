@@ -3,6 +3,7 @@ package com.robin.appblock
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.NotificationManager
 import android.content.pm.PackageManager
 import android.os.Build
 import android.content.ComponentName
@@ -35,6 +36,7 @@ import android.widget.TextView
 class MainActivity : Activity() {
 
     private lateinit var enableButton: Button
+    private lateinit var notifReminder: LinearLayout
     private lateinit var list: LinearLayout
     // package name -> (allow field, window field)
     private val rows = mutableMapOf<String, Pair<EditText, EditText>>()
@@ -80,6 +82,23 @@ class MainActivity : Activity() {
                 startActivity(Intent(this@MainActivity, AppPickerActivity::class.java))
             }
         }
+        // Reminder shown while notifications are off (unless permanently ✕-ed):
+        // tap the text to fix it, tap ✕ to dismiss (with a confirmation).
+        notifReminder = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(TextView(context).apply {
+                text = "Notifications are off, so AppBlock can't warn you " +
+                    "when you're close to using up an app's allowance. " +
+                    "Tap here to turn them on."
+                setPadding(8, 16, 16, 16)
+                setOnClickListener { openNotificationSettings() }
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(Button(context).apply {
+                text = "✕"
+                setOnClickListener { confirmDismissReminder() }
+            })
+        }
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         val root = LinearLayout(this).apply {
@@ -88,6 +107,7 @@ class MainActivity : Activity() {
             // Absorbs focus when a budget field's cursor is dismissed via ✓.
             isFocusableInTouchMode = true
             addView(enableButton)
+            addView(notifReminder)
             addView(addButton)
             addView(list)
         }
@@ -128,6 +148,17 @@ class MainActivity : Activity() {
             textSize = 16f
             setPadding(48, 32, 48, 16)
         }
+        // Always-available path to fix notifications, even after the home-screen
+        // reminder was ✕-ed away. Only shown while they're actually off.
+        val permsLink = TextView(this).apply {
+            text = Html.fromHtml("<u>Some permissions not enabled</u>",
+                Html.FROM_HTML_MODE_LEGACY)
+            textSize = 16f
+            setTextColor(message.linkTextColors)
+            setPadding(48, 0, 48, 24)
+            visibility = if (notificationsEnabled()) View.GONE else View.VISIBLE
+            setOnClickListener { openNotificationSettings() }
+        }
         // Plain link (not a button) that reopens the onboarding screen.
         val manifesto = TextView(this).apply {
             text = Html.fromHtml("<u>Read the manifesto again</u>",
@@ -144,6 +175,7 @@ class MainActivity : Activity() {
             .setView(LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 addView(message)
+                addView(permsLink)
                 addView(manifesto)
             })
             .setPositiveButton("OK", null)
@@ -154,7 +186,36 @@ class MainActivity : Activity() {
         super.onResume()
         // Coming back from the settings page or the app picker: refresh both.
         enableButton.visibility = if (serviceEnabled()) View.GONE else View.VISIBLE
+        notifReminder.visibility =
+            if (!notificationsEnabled() && !Storage.notifReminderDismissed(this))
+                View.VISIBLE else View.GONE
         rebuild()
+    }
+
+    private fun notificationsEnabled() =
+        getSystemService(NotificationManager::class.java).areNotificationsEnabled()
+
+    /** The app's own notification-settings page: works even after a permanent
+     *  "don't allow" on the runtime prompt. */
+    private fun openNotificationSettings() {
+        startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
+    }
+
+    private fun confirmDismissReminder() {
+        AlertDialog.Builder(this)
+            .setTitle("Skip usage warnings?")
+            .setMessage("Without notifications, AppBlock can't let you know " +
+                "when you're about to use up an app's allowance. The first " +
+                "you'll hear of it is the block wall.\n\nHide this reminder " +
+                "anyway? (You can still enable notifications later from the " +
+                "About page.)")
+            .setPositiveButton("Yes, hide it") { _, _ ->
+                Storage.setNotifReminderDismissed(this)
+                notifReminder.visibility = View.GONE
+            }
+            .setNegativeButton("No", null)
+            .show()
     }
 
     override fun onPause() {

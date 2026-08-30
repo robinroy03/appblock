@@ -89,6 +89,14 @@ object Storage {
 
     fun onboardingSeen(ctx: Context) = prefs(ctx).getBoolean("onboarded", false)
 
+    // User tapped ✕ on the "notifications are off" reminder: never show it again.
+    fun notifReminderDismissed(ctx: Context) =
+        prefs(ctx).getBoolean("notifReminderDismissed", false)
+
+    fun setNotifReminderDismissed(ctx: Context) {
+        prefs(ctx).edit().putBoolean("notifReminderDismissed", true).apply()
+    }
+
     fun setOnboardingSeen(ctx: Context) {
         prefs(ctx).edit().putBoolean("onboarded", true).apply()
     }
