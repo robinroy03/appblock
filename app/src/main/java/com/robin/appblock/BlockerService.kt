@@ -1,6 +1,9 @@
 package com.robin.appblock
 
 import android.accessibilityservice.AccessibilityService
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.os.Handler
@@ -46,6 +49,7 @@ class BlockerService : AccessibilityService() {
                 currentPkg = null
                 block(pkg, rule)
             } else {
+                maybeWarn(pkg, rule)
                 handler.postDelayed(this, tickMs)
             }
         }
@@ -69,9 +73,40 @@ class BlockerService : AccessibilityService() {
         } else {
             currentPkg = pkg
             sessionStart = System.currentTimeMillis()
+            // Warn right away if earlier sessions already put usage past a threshold.
+            maybeWarn(pkg, rule)
             handler.postDelayed(tick, tickMs)
         }
     }
+
+    /**
+     * Post the 50%/90% usage warnings, once per climb past each threshold.
+     * The stored level tracks usage back down as the rolling window forgets
+     * old sessions, so each threshold fires again on the next climb.
+     */
+    private fun maybeWarn(pkg: String, rule: Rule) {
+        val usedMs = Storage.usedMsInWindow(this, pkg, rule.windowMin)
+        val level = Storage.crossedWarnLevel(usedMs, rule.allowMin)
+        val last = Storage.warnLevel(this, pkg)
+        if (level > last) {
+            val pct = Storage.usedPct(usedMs, rule.allowMin)
+            val min = Storage.displayedUsedMin(usedMs, rule.allowMin)
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.createNotificationChannel(NotificationChannel(
+                "usage", "Usage warnings", NotificationManager.IMPORTANCE_DEFAULT))
+            nm.notify(pkg.hashCode(), Notification.Builder(this, "usage")
+                .setSmallIcon(android.R.drawable.ic_lock_lock)
+                .setContentTitle("AppBlock")
+                .setContentText("You've used $pct% ($min min) of your usage for ${labelFor(pkg)}")
+                .setAutoCancel(true)
+                .build())
+        }
+        if (level != last) Storage.setWarnLevel(this, pkg, level)
+    }
+
+    private fun labelFor(pkg: String) = try {
+        packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+    } catch (e: Exception) { pkg }
 
     /** Foreground moved elsewhere: log the finished session, stop ticking. */
     private fun endSession() {
@@ -86,9 +121,7 @@ class BlockerService : AccessibilityService() {
     private fun block(pkg: String, rule: Rule) {
         if (overlay != null) return
         val waitMin = Storage.ceilMin(Storage.msUntilUnblocked(this, pkg, rule))
-        val label = try {
-            packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0))
-        } catch (e: Exception) { pkg }
+        val label = labelFor(pkg)
         val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
             Configuration.UI_MODE_NIGHT_YES
 

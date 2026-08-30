@@ -1,7 +1,10 @@
 package com.robin.appblock
 
+import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.pm.PackageManager
+import android.os.Build
 import android.content.ComponentName
 import android.content.Intent
 import android.content.res.Configuration
@@ -41,6 +44,13 @@ class MainActivity : Activity() {
 
         if (!Storage.onboardingSeen(this)) {
             startActivity(Intent(this, OnboardingActivity::class.java))
+        }
+
+        // Android 13+ needs a runtime grant before the 50%/90% usage warnings show.
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
         }
 
         enableButton = Button(this).apply {

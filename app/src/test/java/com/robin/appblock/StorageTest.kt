@@ -93,6 +93,31 @@ class StorageTest {
     }
 
     @Test
+    fun `warn level - 0 below 50, then 50, then 90`() {
+        // 5-min allowance: 50% = 2.5 min, 90% = 4.5 min.
+        assertEquals(0, Storage.crossedWarnLevel(0L, 5))
+        assertEquals(0, Storage.crossedWarnLevel(149_999, 5))      // 49.99%
+        assertEquals(50, Storage.crossedWarnLevel(150_000, 5))     // exactly 50%
+        assertEquals(50, Storage.crossedWarnLevel(4.min, 5))       // 80%
+        assertEquals(90, Storage.crossedWarnLevel(270_000, 5))     // exactly 90%
+        assertEquals(90, Storage.crossedWarnLevel(9.min, 5))       // way over
+    }
+
+    @Test
+    fun `warn level - zero allowance never divides by zero`() {
+        assertEquals(0, Storage.crossedWarnLevel(1.min, 0))
+    }
+
+    @Test
+    fun `used percent - exact, capped at 100`() {
+        assertEquals(0, Storage.usedPct(0L, 5))
+        assertEquals(52, Storage.usedPct(156_000, 5))              // 2.6 of 5 min
+        assertEquals(90, Storage.usedPct(270_000, 5))
+        assertEquals(100, Storage.usedPct(9.min, 5))               // overshoot
+        assertEquals(100, Storage.usedPct(1.min, 0))
+    }
+
+    @Test
     fun `heavy overuse - wait is longer but never exceeds the window`() {
         val intervals = listOf((now - 60.min) to now)  // 60 min of use
         val wait = Storage.msUntilUnblocked(intervals, rule, now)

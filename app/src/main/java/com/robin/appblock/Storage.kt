@@ -41,6 +41,27 @@ object Storage {
     /** Whole minutes for display, any partial minute rounding up. */
     fun ceilMin(ms: Long): Long = (ms + 59_999) / 60_000
 
+    // Usage-warning thresholds, as percent of the allowance.
+    private val WARN_THRESHOLDS = listOf(50, 90)
+
+    /** Percent of the allowance used, for display, capped at 100. */
+    fun usedPct(usedMs: Long, allowMin: Int): Int =
+        if (allowMin <= 0) 100
+        else minOf(100L, usedMs * 100 / (allowMin * 60_000L)).toInt()
+
+    /**
+     * Highest warning threshold (50/90) that current usage has reached, or 0.
+     * The caller notifies when this rises above the previously stored level and
+     * then stores it; because the stored level follows usage back DOWN as old
+     * intervals age out of the rolling window, each threshold re-notifies on
+     * the next climb past it.
+     */
+    fun crossedWarnLevel(usedMs: Long, allowMin: Int): Int {
+        if (allowMin <= 0) return 0
+        val pct = usedMs * 100 / (allowMin * 60_000L)
+        return WARN_THRESHOLDS.lastOrNull { it <= pct } ?: 0
+    }
+
     /**
      * Minutes to show in the "X/Y min used" pill: partial minutes round up
      * (any use shows at least 1), capped at the allowance so slight overshoot
@@ -117,6 +138,18 @@ object Storage {
         val usage = loadUsage(ctx)
         usage.remove(pkg)
         prefs(ctx).edit().putString("usage", usage.toString()).apply()
+        setWarnLevel(ctx, pkg, 0)
+    }
+
+    // Last warning level notified per app: {"com.instagram.android": 50, ...}
+
+    fun warnLevel(ctx: Context, pkg: String): Int =
+        JSONObject(prefs(ctx).getString("notified", "{}")!!).optInt(pkg, 0)
+
+    fun setWarnLevel(ctx: Context, pkg: String, level: Int) {
+        val json = JSONObject(prefs(ctx).getString("notified", "{}")!!)
+        if (level == 0) json.remove(pkg) else json.put(pkg, level)
+        prefs(ctx).edit().putString("notified", json.toString()).apply()
     }
 
     // Convenience wrappers joining persistence with the pure math above.
