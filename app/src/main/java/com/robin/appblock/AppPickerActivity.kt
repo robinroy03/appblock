@@ -45,13 +45,18 @@ class AppPickerActivity : Activity() {
         val shown = allApps.toMutableList()   // what the list currently displays
 
         val addButton = Button(this).apply {
-            text = "Block selected apps"
+            visibility = View.GONE   // only shown once something is selected
             setOnClickListener {
                 val rules = Storage.loadRules(this@AppPickerActivity).toMutableMap()
                 for (pkg in selected) rules[pkg] = Rule(5, 120)
                 Storage.saveRules(this@AppPickerActivity, rules)
                 finish()
             }
+        }
+        fun refreshAddButton() {
+            addButton.visibility = if (selected.isEmpty()) View.GONE else View.VISIBLE
+            addButton.text = if (selected.size == 1) "Block 1 selected app"
+                             else "Block ${selected.size} selected apps"
         }
 
         val iconPx = (40 * resources.displayMetrics.density).toInt()
@@ -89,6 +94,7 @@ class AppPickerActivity : Activity() {
             val nowSelected = pkg !in selected
             if (nowSelected) selected.add(pkg) else selected.remove(pkg)
             ((view as LinearLayout).getChildAt(1) as CheckBox).isChecked = nowSelected
+            refreshAddButton()
         }
 
         val searchBox = EditText(this).apply {

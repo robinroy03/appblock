@@ -9,6 +9,7 @@ import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
@@ -47,6 +48,8 @@ class MainActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(32, 32, 32, 32)
+            // Absorbs focus when a budget field's cursor is dismissed via ✓.
+            isFocusableInTouchMode = true
             addView(enableButton)
             addView(addButton)
             addView(list)
@@ -111,6 +114,27 @@ class MainActivity : Activity() {
                     setOnClickListener { removeApp(pkg) }
                 })
             }
+            // ✓ appears while either budget field is being edited; tapping it
+            // saves, hides the keyboard, and drops the cursor.
+            val confirm = Button(this).apply {
+                text = "✓"
+                visibility = View.GONE
+                setOnClickListener {
+                    save()
+                    allow.clearFocus()
+                    window.clearFocus()
+                    (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
+                        .hideSoftInputFromWindow(it.windowToken, 0)
+                    visibility = View.GONE
+                }
+            }
+            val focusWatcher = View.OnFocusChangeListener { _, _ ->
+                confirm.visibility =
+                    if (allow.isFocused || window.isFocused) View.VISIBLE else View.GONE
+            }
+            allow.onFocusChangeListener = focusWatcher
+            window.onFocusChangeListener = focusWatcher
+
             val budgetLine = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -119,6 +143,7 @@ class MainActivity : Activity() {
                 addView(TextView(context).apply { text = "min per" })
                 addView(window)
                 addView(TextView(context).apply { text = "min" })
+                addView(confirm)
             }
             list.addView(LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
