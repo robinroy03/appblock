@@ -11,6 +11,7 @@ import android.text.Html
 import android.text.InputType
 import android.text.method.LinkMovementMethod
 import android.view.Gravity
+import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.view.inputmethod.InputMethodManager
@@ -35,12 +36,6 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // (i) icon in the top-left of the action bar -> About dialog.
-        actionBar?.apply {
-            setDisplayHomeAsUpEnabled(true)
-            setHomeAsUpIndicator(android.R.drawable.ic_menu_info_details)
-        }
 
         enableButton = Button(this).apply {
             text = "Enable accessibility service (required)"
@@ -67,12 +62,14 @@ class MainActivity : Activity() {
         setContentView(ScrollView(this).apply { addView(root) })
     }
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        if (item.itemId == android.R.id.home) {
-            showAbout()
-            return true
+    // (i) icon in the top-right of the action bar -> About dialog.
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menu.add("About").apply {
+            setIcon(android.R.drawable.ic_menu_info_details)
+            setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            setOnMenuItemClickListener { showAbout(); true }
         }
-        return super.onOptionsItemSelected(item)
+        return true
     }
 
     private fun showAbout() {
