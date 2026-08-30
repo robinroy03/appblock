@@ -4,8 +4,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thank you for taking the time to open an issue — every report like this
-        makes the app better, and I appreciate it a lot. ❤️ — robin
+        Thank you for taking the time to open an issue. Every report like this makes the app better, and I appreciate it a lot.
+        ❤️ - robin
 
   - type: textarea
     id: what
