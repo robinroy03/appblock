@@ -25,6 +25,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
+import android.widget.Toast
 import java.util.Calendar
 
 /** True when the user has granted "Usage access" (a special app op with its own
@@ -275,7 +276,12 @@ class AppPickerActivity : Activity() {
         setPadding(28, 12, 28, 12)
         setOnClickListener {
             val key = chips.entries.first { it.value.first == this }.key
-            if (key != SortKey.NAME && !haveUsage) return@setOnClickListener
+            if (key != SortKey.NAME && !haveUsage) {
+                Toast.makeText(this@AppPickerActivity,
+                    "Turn on Usage access to sort by screen time",
+                    Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             userSorted = true
             if (sortKey == key) descending = !descending
             else {
