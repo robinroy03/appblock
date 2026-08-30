@@ -61,6 +61,7 @@ class AppPickerActivity : Activity() {
 
     private var sortKey = SortKey.WEEK
     private var descending = true
+    private var userSorted = false   // until a chip is tapped, defaults apply
     private var query = ""
     private var haveUsage = false
 
@@ -151,9 +152,10 @@ class AppPickerActivity : Activity() {
                 (col.getChildAt(0) as TextView).text = app.label
                 (col.getChildAt(1) as TextView).apply {
                     visibility = if (haveUsage) View.VISIBLE else View.GONE
-                    text = if (app.weekMs == 0L && app.todayMs == 0L) "Not used this week"
+                    text = if (app.weekMs == 0L && app.todayMs == 0L)
+                        "Not used in the last 7 days"
                         else "${Storage.fmtDuration(app.todayMs)} today · " +
-                             "${Storage.fmtDuration(app.weekMs)} this week"
+                             "${Storage.fmtDuration(app.weekMs)} last 7 days"
                 }
                 return row
             }
@@ -184,7 +186,7 @@ class AppPickerActivity : Activity() {
         chips = mapOf(
             SortKey.NAME to (chip("Name") to "Name"),
             SortKey.TODAY to (chip("Today") to "Today"),
-            SortKey.WEEK to (chip("This week") to "This week"))
+            SortKey.WEEK to (chip("7 days") to "7 days"))
         val sortRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -213,6 +215,13 @@ class AppPickerActivity : Activity() {
         haveUsage = usageAccessGranted(this)
         usageCard.visibility = if (haveUsage) View.GONE else View.VISIBLE
         if (haveUsage) loadUsage()
+        // Usage sorts need usage data; fall back to name until access is
+        // granted, then to the 7-days default unless the user chose a sort.
+        if (!haveUsage && sortKey != SortKey.NAME) {
+            sortKey = SortKey.NAME; descending = false
+        } else if (haveUsage && !userSorted) {
+            sortKey = SortKey.WEEK; descending = true
+        }
         refreshShown()
     }
 
@@ -255,6 +264,8 @@ class AppPickerActivity : Activity() {
                 cornerRadius = 40f
                 setColor(if (night) 0xFF3A3A3A.toInt() else 0xFFE0E0E0.toInt())
             }
+            // Usage sorts are dead without usage access: visible but greyed.
+            view.alpha = if (key != SortKey.NAME && !haveUsage) 0.4f else 1f
         }
     }
 
@@ -264,6 +275,8 @@ class AppPickerActivity : Activity() {
         setPadding(28, 12, 28, 12)
         setOnClickListener {
             val key = chips.entries.first { it.value.first == this }.key
+            if (key != SortKey.NAME && !haveUsage) return@setOnClickListener
+            userSorted = true
             if (sortKey == key) descending = !descending
             else {
                 sortKey = key
