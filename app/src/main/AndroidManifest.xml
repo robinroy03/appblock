@@ -28,6 +28,11 @@
             android:exported="false"
             android:label="Choose apps to block" />
 
+        <activity
+            android:name=".OnboardingActivity"
+            android:exported="false"
+            android:label="Tie yourself to the mast" />
+
         <!-- Accessibility service: Android calls us the moment any app comes to the
              foreground. It also draws the block-wall overlay itself. -->
         <service

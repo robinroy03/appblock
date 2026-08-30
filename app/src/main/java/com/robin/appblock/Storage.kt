@@ -57,6 +57,12 @@ object Storage {
     private fun prefs(ctx: Context) =
         ctx.getSharedPreferences("appblock", Context.MODE_PRIVATE)
 
+    fun onboardingSeen(ctx: Context) = prefs(ctx).getBoolean("onboarded", false)
+
+    fun setOnboardingSeen(ctx: Context) {
+        prefs(ctx).edit().putBoolean("onboarded", true).apply()
+    }
+
     fun loadRules(ctx: Context): Map<String, Rule> {
         val json = JSONObject(prefs(ctx).getString("rules", "{}")!!)
         val out = mutableMapOf<String, Rule>()

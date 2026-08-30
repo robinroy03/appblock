@@ -39,6 +39,10 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        if (!Storage.onboardingSeen(this)) {
+            startActivity(Intent(this, OnboardingActivity::class.java))
+        }
+
         enableButton = Button(this).apply {
             text = "Enable accessibility service (required)"
             setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
@@ -114,9 +118,24 @@ class MainActivity : Activity() {
             textSize = 16f
             setPadding(48, 32, 48, 16)
         }
+        // Plain link (not a button) that reopens the onboarding screen.
+        val manifesto = TextView(this).apply {
+            text = Html.fromHtml("<u>Read the manifesto again</u>",
+                Html.FROM_HTML_MODE_LEGACY)
+            textSize = 16f
+            setTextColor(message.linkTextColors)
+            setPadding(48, 0, 48, 32)
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, OnboardingActivity::class.java))
+            }
+        }
         AlertDialog.Builder(this)
             .setTitle("About AppBlock")
-            .setView(message)
+            .setView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(message)
+                addView(manifesto)
+            })
             .setPositiveButton("OK", null)
             .show()
     }
