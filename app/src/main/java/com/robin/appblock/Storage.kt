@@ -44,6 +44,15 @@ object Storage {
     // Usage-warning thresholds, as percent of the allowance.
     private val WARN_THRESHOLDS = listOf(50, 90)
 
+    /**
+     * Minutes for the warning notification, one decimal, truncated ("2.5",
+     * "3") so it never contradicts the (also truncated) percent beside it.
+     */
+    fun fmtMin(ms: Long): String {
+        val tenths = ms / 6_000
+        return if (tenths % 10 == 0L) "${tenths / 10}" else "${tenths / 10}.${tenths % 10}"
+    }
+
     /** Percent of the allowance used, for display, capped at 100. */
     fun usedPct(usedMs: Long, allowMin: Int): Int =
         if (allowMin <= 0) 100

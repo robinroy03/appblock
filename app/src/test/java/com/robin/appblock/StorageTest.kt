@@ -109,6 +109,15 @@ class StorageTest {
     }
 
     @Test
+    fun `warning minutes - one truncated decimal, matching the percent`() {
+        assertEquals("2.5", Storage.fmtMin(150_000))   // 50% of 5 min
+        assertEquals("2.5", Storage.fmtMin(155_999))   // truncates, like the pct
+        assertEquals("2.6", Storage.fmtMin(156_000))
+        assertEquals("3", Storage.fmtMin(3.min))       // whole -> no decimal
+        assertEquals("0", Storage.fmtMin(0))
+    }
+
+    @Test
     fun `used percent - exact, capped at 100`() {
         assertEquals(0, Storage.usedPct(0L, 5))
         assertEquals(52, Storage.usedPct(156_000, 5))              // 2.6 of 5 min
