@@ -324,6 +324,22 @@ class MainActivity : Activity() {
         list.removeAllViews()
         rows.clear()
         val rules = Storage.loadRules(this)
+
+        // Blocking is paused while accessibility is off: hide the app cards
+        // (they'd promise something the app can't deliver) but keep the rules
+        // saved, so re-enabling brings everything straight back.
+        if (!serviceEnabled()) {
+            if (rules.isNotEmpty()) {
+                list.addView(TextView(this).apply {
+                    text = "\nBlocking is paused because the accessibility " +
+                        "service is off. Your ${rules.size} blocked " +
+                        (if (rules.size == 1) "app is" else "apps are") +
+                        " saved and will reappear once you turn it back on."
+                    gravity = Gravity.CENTER
+                })
+            }
+            return
+        }
         val entries = rules.entries.sortedBy { labelFor(it.key).lowercase() }
 
         if (entries.isEmpty()) {
@@ -430,6 +446,9 @@ class MainActivity : Activity() {
     }
 
     private fun save() {
+        // No rows means the list wasn't built (service off, blocking paused):
+        // saving would rewrite the rules blob as empty and wipe every app.
+        if (rows.isEmpty()) return
         val old = Storage.loadRules(this)
         val rules = mutableMapOf<String, Rule>()
         for ((pkg, fields) in rows) {
