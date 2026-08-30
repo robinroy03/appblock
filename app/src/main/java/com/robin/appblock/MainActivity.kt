@@ -91,8 +91,12 @@ class MainActivity : Activity() {
     }
 
     private fun showAbout() {
+        val version = try {
+            packageManager.getPackageInfo(packageName, 0).versionName
+        } catch (e: Exception) { "unknown" }
         val message = TextView(this).apply {
             text = Html.fromHtml(
+                "Version $version<br><br>" +
                 "This app is open source:<br>" +
                 "<a href=\"https://github.com/robinroy03/appblock\">github.com/robinroy03/appblock</a>" +
                 "<br><br>Made with ❤️ by <a href=\"https://x.com/_RobinRoy\">robin</a>",
