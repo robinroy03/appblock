@@ -53,6 +53,21 @@ object Storage {
         return if (tenths % 10 == 0L) "${tenths / 10}" else "${tenths / 10}.${tenths % 10}"
     }
 
+    /** What the home screen's list area shows. */
+    enum class HomeList { CARDS, EMPTY_HINT, PAUSED_NOTE, NOTHING }
+
+    /**
+     * CARDS: service on, apps blocked. EMPTY_HINT ("no apps yet"): service on,
+     * nothing blocked. PAUSED_NOTE: service off but rules exist — they're kept,
+     * blocking just isn't enforced. NOTHING: fresh state, service off, no rules.
+     */
+    fun homeList(serviceOn: Boolean, ruleCount: Int): HomeList = when {
+        serviceOn && ruleCount == 0 -> HomeList.EMPTY_HINT
+        serviceOn -> HomeList.CARDS
+        ruleCount > 0 -> HomeList.PAUSED_NOTE
+        else -> HomeList.NOTHING
+    }
+
     /** Screen-time durations for the app picker: "0m", "45m", "2h", "2h 12m". */
     fun fmtDuration(ms: Long): String {
         val h = ms / 3_600_000

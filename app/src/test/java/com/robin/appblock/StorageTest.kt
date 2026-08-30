@@ -118,6 +118,18 @@ class StorageTest {
     }
 
     @Test
+    fun `home list - all four states`() {
+        // Fresh install: service off, no rules -> show nothing extra.
+        assertEquals(Storage.HomeList.NOTHING, Storage.homeList(false, 0))
+        // Service off with rules -> "blocking is paused" note, rules kept.
+        assertEquals(Storage.HomeList.PAUSED_NOTE, Storage.homeList(false, 3))
+        // Service on, nothing blocked yet -> the empty hint.
+        assertEquals(Storage.HomeList.EMPTY_HINT, Storage.homeList(true, 0))
+        // Normal operation -> the app cards.
+        assertEquals(Storage.HomeList.CARDS, Storage.homeList(true, 3))
+    }
+
+    @Test
     fun `picker durations - minutes, whole hours, mixed`() {
         assertEquals("0m", Storage.fmtDuration(0))
         assertEquals("0m", Storage.fmtDuration(59_999))

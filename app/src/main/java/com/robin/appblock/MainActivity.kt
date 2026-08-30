@@ -325,11 +325,12 @@ class MainActivity : Activity() {
         rows.clear()
         val rules = Storage.loadRules(this)
 
-        // Blocking is paused while accessibility is off: hide the app cards
-        // (they'd promise something the app can't deliver) but keep the rules
-        // saved, so re-enabling brings everything straight back.
-        if (!serviceEnabled()) {
-            if (rules.isNotEmpty()) {
+        // While accessibility is off the app cards hide (they'd promise
+        // something the app can't deliver) but the rules stay saved, so
+        // re-enabling brings everything straight back.
+        when (Storage.homeList(serviceEnabled(), rules.size)) {
+            Storage.HomeList.NOTHING -> return
+            Storage.HomeList.PAUSED_NOTE -> {
                 list.addView(TextView(this).apply {
                     text = "\nBlocking is paused because the accessibility " +
                         "service is off. Your ${rules.size} blocked " +
@@ -337,18 +338,18 @@ class MainActivity : Activity() {
                         " saved and will reappear once you turn it back on."
                     gravity = Gravity.CENTER
                 })
+                return
             }
-            return
+            Storage.HomeList.EMPTY_HINT -> {
+                list.addView(TextView(this).apply {
+                    text = "\nNo apps blocked yet."
+                    gravity = Gravity.CENTER
+                })
+                return
+            }
+            Storage.HomeList.CARDS -> {}
         }
         val entries = rules.entries.sortedBy { labelFor(it.key).lowercase() }
-
-        if (entries.isEmpty()) {
-            list.addView(TextView(this).apply {
-                text = "\nNo apps blocked yet."
-                gravity = Gravity.CENTER
-            })
-            return
-        }
 
         val iconPx = (40 * resources.displayMetrics.density).toInt()
         for ((pkg, rule) in entries) {
