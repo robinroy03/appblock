@@ -96,16 +96,22 @@ class MainActivity : Activity() {
         } catch (e: Exception) { "unknown" }
         val message = TextView(this).apply {
             text = Html.fromHtml(
-                "Version $version<br><br>" +
-                "This app is open source:<br>" +
-                "<a href=\"https://github.com/robinroy03/appblock\">github.com/robinroy03/appblock</a>" +
-                "<br><br>Made with ❤️ by <a href=\"https://x.com/_RobinRoy\">robin</a>" +
+                "One morning I woke up at 5am and scrolled Instagram, X and " +
+                "YouTube for an hour straight. My entire daily quota, gone " +
+                "before sunrise :) That's when it clicked: daily limits fail " +
+                "because one binge empties them, and then you override. " +
+                "AppBlock gives you a small allowance every time window " +
+                "instead. Enough to check in, never enough to binge." +
+                "<br><br>This app is " +
+                "<a href=\"https://github.com/robinroy03/appblock\">open sourced</a>" +
+                " under MIT license." +
                 "<br><br>Feedback? Please email me " +
-                "<a href=\"mailto:robinroy.work@gmail.com\">here</a>",
+                "<a href=\"mailto:robinroy.work@gmail.com\">here</a>" +
+                "<br><br>Made with ❤️ by <a href=\"https://x.com/_RobinRoy\">robin</a>" +
+                "<br><br>Version $version",
                 Html.FROM_HTML_MODE_LEGACY)
             movementMethod = LinkMovementMethod.getInstance()
             textSize = 16f
-            gravity = Gravity.CENTER_HORIZONTAL
             setPadding(48, 32, 48, 16)
         }
         AlertDialog.Builder(this)
