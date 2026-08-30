@@ -1,8 +1,10 @@
 package com.robin.appblock
 
 import android.app.Activity
+import android.graphics.Typeface
 import android.os.Bundle
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -18,6 +20,19 @@ class OnboardingActivity : Activity() {
         super.onCreate(savedInstanceState)
         title = "Tie yourself to the mast"
 
+        val painting = ImageView(this).apply {
+            setImageResource(R.drawable.ulysses_sirens)
+            adjustViewBounds = true   // full width, height follows aspect ratio
+            contentDescription = "Ulysses tied to the mast of his ship while " +
+                "winged Sirens circle the rowing crew"
+        }
+        val caption = TextView(this).apply {
+            textSize = 12f
+            setTypeface(typeface, Typeface.ITALIC)
+            setPadding(0, 8, 0, 24)
+            text = "Ulysses and the Sirens, John William Waterhouse, 1891. " +
+                "That's him on the mast."
+        }
         val body = TextView(this).apply {
             textSize = 16f
             setLineSpacing(0f, 1.2f)
@@ -47,6 +62,8 @@ class OnboardingActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 32, 48, 32)
+            addView(painting)
+            addView(caption)
             addView(body)
             addView(next)
         }
