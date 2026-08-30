@@ -99,7 +99,9 @@ class MainActivity : Activity() {
                 "Version $version<br><br>" +
                 "This app is open source:<br>" +
                 "<a href=\"https://github.com/robinroy03/appblock\">github.com/robinroy03/appblock</a>" +
-                "<br><br>Made with ❤️ by <a href=\"https://x.com/_RobinRoy\">robin</a>",
+                "<br><br>Made with ❤️ by <a href=\"https://x.com/_RobinRoy\">robin</a>" +
+                "<br><br>Feedback? Please email me " +
+                "<a href=\"mailto:robinroy.work@gmail.com\">here</a>",
                 Html.FROM_HTML_MODE_LEGACY)
             movementMethod = LinkMovementMethod.getInstance()
             textSize = 16f
