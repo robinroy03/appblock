@@ -103,6 +103,7 @@ class MainActivity : Activity() {
                 Html.FROM_HTML_MODE_LEGACY)
             movementMethod = LinkMovementMethod.getInstance()
             textSize = 16f
+            gravity = Gravity.CENTER_HORIZONTAL
             setPadding(48, 32, 48, 16)
         }
         AlertDialog.Builder(this)
