@@ -18,3 +18,8 @@ A good issue has:
   in vendor-specific ways
 
 Thanks for understanding.
+
+---
+
+*Maintainer note: after cloning, enable the test-running pre-commit hook once with
+`git config core.hooksPath .githooks`. CI runs the same tests on every push.*

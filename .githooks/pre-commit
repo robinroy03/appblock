@@ -1,0 +1,14 @@
+#!/bin/sh
+# Runs the unit tests before every commit; a failing test blocks the commit.
+# Enable once per clone with: git config core.hooksPath .githooks
+
+# Gradle needs Java 17; pick up the Homebrew one if the shell default is older.
+if [ -d /opt/homebrew/opt/openjdk@17 ]; then
+  export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
+fi
+
+echo "pre-commit: running unit tests..."
+./gradlew --quiet test || {
+  echo "pre-commit: tests failed — commit blocked. (Bypass in an emergency: git commit --no-verify)"
+  exit 1
+}

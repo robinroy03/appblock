@@ -1,0 +1,37 @@
+name: Bug report / feature request
+description: Tell me what broke or what you want — I'll implement the good ones.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time to open an issue — every report like this
+        makes the app better, and I appreciate it a lot. ❤️ — robin
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened / what you want
+      description: Be concrete — "the block wall didn't appear when I opened Instagram", not "make it better".
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce (for bugs)
+      description: Which app you blocked, what budget you set, and what you did.
+      placeholder: |
+        1. Blocked Instagram with 5 min per 120 min
+        2. Used it until the wall appeared
+        3. Opened it again from a notification -> no wall
+    validations:
+      required: false
+
+  - type: input
+    id: device
+    attributes:
+      label: Device + Android version
+      description: Blockers are exactly the kind of app OEMs break in vendor-specific ways, so this matters.
+      placeholder: e.g. OnePlus Nord 2T, Android 14 (OxygenOS 14)
+    validations:
+      required: true
