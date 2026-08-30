@@ -46,6 +46,22 @@ class MainActivity : Activity() {
         val addButton = Button(this).apply {
             text = "+ Block an app"
             setOnClickListener {
+                // Blocking is only enforced by the accessibility service; adding
+                // apps before it's on would silently do nothing.
+                if (!serviceEnabled()) {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setIcon(android.R.drawable.ic_dialog_info)
+                        .setTitle("Accessibility service is off")
+                        .setMessage("AppBlock can't block anything until its " +
+                            "accessibility service is enabled. Turn it on first, " +
+                            "then pick the apps to block.")
+                        .setPositiveButton("Open settings") { _, _ ->
+                            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                    return@setOnClickListener
+                }
                 save()
                 startActivity(Intent(this@MainActivity, AppPickerActivity::class.java))
             }
