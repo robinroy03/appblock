@@ -3,6 +3,9 @@
 
 # appblock
 
+| ![AppBlock home screen](public/home.jpg) | ![Blocked screen](public/blocked.jpg) |
+| --- | --- |
+
 Personal Android app blocker — like [siteblock](https://github.com/csapuntz/siteblock), but for apps.
 Pick apps and give each a budget: **allow X minutes per rolling Y minutes**. When the budget
 is spent, opening the app bounces you to a "blocked, try again in N min" screen.
