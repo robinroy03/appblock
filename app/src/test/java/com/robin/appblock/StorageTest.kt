@@ -119,8 +119,8 @@ class StorageTest {
 
     @Test
     fun `home list - all four states`() {
-        // Fresh install: service off, no rules -> show nothing extra.
-        assertEquals(Storage.HomeList.NOTHING, Storage.homeList(false, 0))
+        // Fresh install: service off, no rules -> explain the required service.
+        assertEquals(Storage.HomeList.SETUP_HINT, Storage.homeList(false, 0))
         // Service off with rules -> "blocking is paused" note, rules kept.
         assertEquals(Storage.HomeList.PAUSED_NOTE, Storage.homeList(false, 3))
         // Service on, nothing blocked yet -> the empty hint.

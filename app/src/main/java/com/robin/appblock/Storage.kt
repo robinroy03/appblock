@@ -54,18 +54,19 @@ object Storage {
     }
 
     /** What the home screen's list area shows. */
-    enum class HomeList { CARDS, EMPTY_HINT, PAUSED_NOTE, NOTHING }
+    enum class HomeList { CARDS, EMPTY_HINT, PAUSED_NOTE, SETUP_HINT }
 
     /**
      * CARDS: service on, apps blocked. EMPTY_HINT ("no apps yet"): service on,
      * nothing blocked. PAUSED_NOTE: service off but rules exist — they're kept,
-     * blocking just isn't enforced. NOTHING: fresh state, service off, no rules.
+     * blocking just isn't enforced. SETUP_HINT: fresh state, service off and no
+     * rules — explain why the service is required.
      */
     fun homeList(serviceOn: Boolean, ruleCount: Int): HomeList = when {
         serviceOn && ruleCount == 0 -> HomeList.EMPTY_HINT
         serviceOn -> HomeList.CARDS
         ruleCount > 0 -> HomeList.PAUSED_NOTE
-        else -> HomeList.NOTHING
+        else -> HomeList.SETUP_HINT
     }
 
     /** Screen-time durations for the app picker: "0m", "45m", "2h", "2h 12m". */

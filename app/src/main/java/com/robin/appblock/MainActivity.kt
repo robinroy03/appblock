@@ -329,7 +329,16 @@ class MainActivity : Activity() {
         // something the app can't deliver) but the rules stay saved, so
         // re-enabling brings everything straight back.
         when (Storage.homeList(serviceEnabled(), rules.size)) {
-            Storage.HomeList.NOTHING -> return
+            Storage.HomeList.SETUP_HINT -> {
+                list.addView(TextView(this).apply {
+                    text = "\nAppBlock won't work until its accessibility " +
+                        "service is enabled. That service is how the app " +
+                        "sees which app you're using and draws the block " +
+                        "wall over it when your time is up."
+                    gravity = Gravity.CENTER
+                })
+                return
+            }
             Storage.HomeList.PAUSED_NOTE -> {
                 list.addView(TextView(this).apply {
                     text = "\nBlocking is paused because the accessibility " +
