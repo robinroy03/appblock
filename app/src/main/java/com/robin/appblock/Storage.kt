@@ -89,6 +89,14 @@ object Storage {
 
     fun onboardingSeen(ctx: Context) = prefs(ctx).getBoolean("onboarded", false)
 
+    // The one-time system notification prompt fires on the first home-screen
+    // visit AFTER onboarding, so a brand-new user isn't greeted with a popup.
+    fun notifPromptAsked(ctx: Context) = prefs(ctx).getBoolean("notifPromptAsked", false)
+
+    fun setNotifPromptAsked(ctx: Context) {
+        prefs(ctx).edit().putBoolean("notifPromptAsked", true).apply()
+    }
+
     // User tapped ✕ on the "notifications are off" reminder: never show it again.
     fun notifReminderDismissed(ctx: Context) =
         prefs(ctx).getBoolean("notifReminderDismissed", false)

@@ -48,13 +48,6 @@ class MainActivity : Activity() {
             startActivity(Intent(this, OnboardingActivity::class.java))
         }
 
-        // Android 13+ needs a runtime grant before the 50%/90% usage warnings show.
-        if (Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
-                PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
-        }
-
         enableButton = Button(this).apply {
             text = "Enable accessibility service (required)"
             setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
@@ -82,20 +75,34 @@ class MainActivity : Activity() {
                 startActivity(Intent(this@MainActivity, AppPickerActivity::class.java))
             }
         }
-        // Reminder shown while notifications are off (unless permanently ✕-ed):
-        // tap the text to fix it, tap ✕ to dismiss (with a confirmation).
+        // Info card shown while notifications are off (unless permanently ✕-ed):
+        // tap the card to fix it, tap ✕ to dismiss (with a confirmation).
+        val night = (resources.configuration.uiMode and
+            Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         notifReminder = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(28, 12, 4, 12)
+            background = GradientDrawable().apply {
+                cornerRadius = 24f
+                setColor(if (night) 0xFF33301F.toInt() else 0xFFFFF8E1.toInt())
+                setStroke(3, 0xFFFFB300.toInt())
+            }
+            setOnClickListener { openNotificationSettings() }
+            addView(ImageView(context).apply {
+                setImageResource(android.R.drawable.ic_dialog_info)
+            })
             addView(TextView(context).apply {
                 text = "Notifications are off, so AppBlock can't warn you " +
                     "when you're close to using up an app's allowance. " +
-                    "Tap here to turn them on."
-                setPadding(8, 16, 16, 16)
-                setOnClickListener { openNotificationSettings() }
+                    "Tap to turn them on."
+                textSize = 14f
+                setPadding(24, 12, 8, 12)
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            addView(Button(context).apply {
+            addView(TextView(context).apply {
                 text = "✕"
+                textSize = 18f
+                setPadding(28, 28, 28, 28)
                 setOnClickListener { confirmDismissReminder() }
             })
         }
@@ -107,7 +114,10 @@ class MainActivity : Activity() {
             // Absorbs focus when a budget field's cursor is dismissed via ✓.
             isFocusableInTouchMode = true
             addView(enableButton)
-            addView(notifReminder)
+            addView(notifReminder, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = 12; bottomMargin = 12 })
             addView(addButton)
             addView(list)
         }
@@ -148,16 +158,17 @@ class MainActivity : Activity() {
             textSize = 16f
             setPadding(48, 32, 48, 16)
         }
-        // Always-available path to fix notifications, even after the home-screen
-        // reminder was ✕-ed away. Only shown while they're actually off.
+        // Always-available path to fix permissions, even after the home-screen
+        // reminder was ✕-ed away. Only shown while something is actually off.
         val permsLink = TextView(this).apply {
             text = Html.fromHtml("<u>Some permissions not enabled</u>",
                 Html.FROM_HTML_MODE_LEGACY)
             textSize = 16f
             setTextColor(message.linkTextColors)
             setPadding(48, 0, 48, 24)
-            visibility = if (notificationsEnabled()) View.GONE else View.VISIBLE
-            setOnClickListener { openNotificationSettings() }
+            visibility = if (notificationsEnabled() && serviceEnabled())
+                View.GONE else View.VISIBLE
+            setOnClickListener { showPermissionsDialog() }
         }
         // Plain link (not a button) that reopens the onboarding screen.
         val manifesto = TextView(this).apply {
@@ -190,6 +201,25 @@ class MainActivity : Activity() {
             if (!notificationsEnabled() && !Storage.notifReminderDismissed(this))
                 View.VISIBLE else View.GONE
         rebuild()
+        refreshPermRows?.invoke()
+
+        // One-time system notification prompt, deferred until the manifesto has
+        // been read so a brand-new user isn't greeted with a popup.
+        if (Build.VERSION.SDK_INT >= 33 && Storage.onboardingSeen(this) &&
+            !Storage.notifPromptAsked(this) &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED) {
+            Storage.setNotifPromptAsked(this)
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        // Granted from the prompt -> the reminder card no longer applies.
+        notifReminder.visibility =
+            if (!notificationsEnabled() && !Storage.notifReminderDismissed(this))
+                View.VISIBLE else View.GONE
     }
 
     private fun notificationsEnabled() =
@@ -200,6 +230,56 @@ class MainActivity : Activity() {
     private fun openNotificationSettings() {
         startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
             .putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
+    }
+
+    // Lets onResume refresh the permissions dialog's ✓/✗ marks while it's open,
+    // so fixing a setting and coming back shows the tick without reopening.
+    private var refreshPermRows: (() -> Unit)? = null
+
+    /** One row per permission: ✓/✗, name, what it's for; tap to go fix it. */
+    private fun showPermissionsDialog() {
+        fun row(title: String, why: String, enabled: () -> Boolean, fix: () -> Unit):
+            Pair<LinearLayout, () -> Unit> {
+            val mark = TextView(this).apply { textSize = 22f }
+            val update = {
+                mark.text = if (enabled()) "✓" else "✗"
+                mark.setTextColor(if (enabled()) 0xFF2E7D32.toInt() else 0xFFC62828.toInt())
+            }
+            update()
+            val view = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(48, 24, 48, 24)
+                setOnClickListener { fix() }
+                addView(mark, LinearLayout.LayoutParams(64, LinearLayout.LayoutParams.WRAP_CONTENT))
+                addView(LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(16, 0, 0, 0)
+                    addView(TextView(context).apply { text = title; textSize = 16f })
+                    addView(TextView(context).apply { text = why; textSize = 13f; alpha = 0.7f })
+                })
+            }
+            return view to update
+        }
+        val (accRow, accUpdate) = row(
+            "Accessibility service",
+            "Required. Sees which app is open and draws the block wall.",
+            ::serviceEnabled) { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        val (notifRow, notifUpdate) = row(
+            "Notifications",
+            "Warns you at 50% and 90% of an app's allowance.",
+            ::notificationsEnabled) { openNotificationSettings() }
+        refreshPermRows = { accUpdate(); notifUpdate() }
+        AlertDialog.Builder(this)
+            .setTitle("Permissions")
+            .setView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(accRow)
+                addView(notifRow)
+            })
+            .setPositiveButton("Done", null)
+            .setOnDismissListener { refreshPermRows = null }
+            .show()
     }
 
     private fun confirmDismissReminder() {
