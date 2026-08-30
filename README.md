@@ -1,10 +1,10 @@
 > [!IMPORTANT]
-> This was written entirely with AI, and I haven't verified any of the code. Please use it with caution — though I do trust [Claude's Plan](https://www.youtube.com/watch?v=gFx-NjTw3sM).
+> This was written entirely with AI, and I haven't verified any of the code. Please use it with caution — though I do trust [Claude's Plan](https://www.youtube.com/watch?v=gFx-NjTw3sM). The app will go on the Play Store after I do a manual security and performance audit. All apps from me will be held to the highest quality standards. I will not ship slop.
 
 # appblock
 
 | ![AppBlock home screen](public/home.jpg) | ![Blocked screen](public/blocked.jpg) |
-| --- | --- |
+| ---------------------------------------- | ------------------------------------- |
 
 Personal Android app blocker — like [siteblock](https://github.com/csapuntz/siteblock), but for apps.
 Pick apps and give each a budget: **allow X minutes per rolling Y minutes**. When the budget
@@ -46,7 +46,7 @@ The app lives its normal background life — you just can't look at it.
   blocking an app you take calls on.
 - **Picture-in-picture** mini-players are untested; entering the app to start one
   is blocked regardless.
-- A blocked app's content shown *inside another app* (e.g. a YouTube video
+- A blocked app's content shown _inside another app_ (e.g. a YouTube video
   embedded in a browser) is not blocked — only the app's own windows are.
 
 ## Install (via adb — read this, it saves you two roadblocks)
