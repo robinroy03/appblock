@@ -269,13 +269,20 @@ class MainActivity : Activity() {
             "Notifications",
             "Warns you at 50% and 90% of an app's allowance.",
             ::notificationsEnabled) { openNotificationSettings() }
-        refreshPermRows = { accUpdate(); notifUpdate() }
+        val (usageRow, usageUpdate) = row(
+            "Usage access",
+            "Optional. Shows screen time next to each app in the picker.",
+            { usageAccessGranted(this) }) {
+            startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+        }
+        refreshPermRows = { accUpdate(); notifUpdate(); usageUpdate() }
         AlertDialog.Builder(this)
             .setTitle("Permissions")
             .setView(LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 addView(accRow)
                 addView(notifRow)
+                addView(usageRow)
             })
             .setPositiveButton("Done", null)
             .setOnDismissListener { refreshPermRows = null }

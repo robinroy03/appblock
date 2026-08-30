@@ -118,6 +118,17 @@ class StorageTest {
     }
 
     @Test
+    fun `picker durations - minutes, whole hours, mixed`() {
+        assertEquals("0m", Storage.fmtDuration(0))
+        assertEquals("0m", Storage.fmtDuration(59_999))
+        assertEquals("1m", Storage.fmtDuration(60_000))
+        assertEquals("45m", Storage.fmtDuration(45.min))
+        assertEquals("1h", Storage.fmtDuration(60.min))
+        assertEquals("1h 1m", Storage.fmtDuration(61.min))
+        assertEquals("2h 12m", Storage.fmtDuration(132.min + 30_000))
+    }
+
+    @Test
     fun `used percent - exact, capped at 100`() {
         assertEquals(0, Storage.usedPct(0L, 5))
         assertEquals(52, Storage.usedPct(156_000, 5))              // 2.6 of 5 min

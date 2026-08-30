@@ -53,6 +53,17 @@ object Storage {
         return if (tenths % 10 == 0L) "${tenths / 10}" else "${tenths / 10}.${tenths % 10}"
     }
 
+    /** Screen-time durations for the app picker: "0m", "45m", "2h", "2h 12m". */
+    fun fmtDuration(ms: Long): String {
+        val h = ms / 3_600_000
+        val m = ms / 60_000 % 60
+        return when {
+            h == 0L -> "${m}m"
+            m == 0L -> "${h}h"
+            else -> "${h}h ${m}m"
+        }
+    }
+
     /** Percent of the allowance used, for display, capped at 100. */
     fun usedPct(usedMs: Long, allowMin: Int): Int =
         if (allowMin <= 0) 100

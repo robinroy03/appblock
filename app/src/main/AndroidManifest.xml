@@ -1,8 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Heads-up notifications at 50%/90% of an app's usage allowance -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Screen-time stats in the app picker; granted via the "Usage access"
+         settings page, never a runtime prompt -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
 
     <!-- Lets us list all launchable apps on Android 11+ -->
     <queries>
