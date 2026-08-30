@@ -68,6 +68,23 @@ class StorageTest {
     }
 
     @Test
+    fun `used pill - zero use shows zero`() {
+        assertEquals(0L, Storage.displayedUsedMin(0, 5))
+    }
+
+    @Test
+    fun `used pill - partial minutes round up`() {
+        assertEquals(1L, Storage.displayedUsedMin(1_000, 5))       // 1s -> "1"
+        assertEquals(1L, Storage.displayedUsedMin(60_000, 5))      // exactly 1 min
+        assertEquals(2L, Storage.displayedUsedMin(60_001, 5))      // just over 1 min
+    }
+
+    @Test
+    fun `used pill - display capped at the allowance`() {
+        assertEquals(5L, Storage.displayedUsedMin(9.min, 5))       // overshoot -> "5/5"
+    }
+
+    @Test
     fun `heavy overuse - wait is longer but never exceeds the window`() {
         val intervals = listOf((now - 60.min) to now)  // 60 min of use
         val wait = Storage.msUntilUnblocked(intervals, rule, now)

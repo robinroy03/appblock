@@ -136,7 +136,7 @@ class MainActivity : Activity() {
             // Small pill right after the name showing budget already spent.
             val usedMs = Storage.usedMs(
                 Storage.loadIntervals(this, pkg), rule.windowMin, System.currentTimeMillis())
-            val usedMin = minOf((usedMs + 59_999) / 60_000, rule.allowMin.toLong())
+            val usedMin = Storage.displayedUsedMin(usedMs, rule.allowMin)
             val usedBubble = TextView(this).apply {
                 text = "$usedMin/${rule.allowMin} min used"
                 textSize = 12f
@@ -173,11 +173,10 @@ class MainActivity : Activity() {
                 visibility = View.GONE
                 setOnClickListener {
                     save()
-                    allow.clearFocus()
-                    window.clearFocus()
                     (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
                         .hideSoftInputFromWindow(it.windowToken, 0)
-                    visibility = View.GONE
+                    // Rebuild so the "X/Y min used" pill reflects the new budget.
+                    rebuild()
                 }
             }
             val focusWatcher = View.OnFocusChangeListener { _, _ ->

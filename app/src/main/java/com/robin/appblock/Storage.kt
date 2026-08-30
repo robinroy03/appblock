@@ -38,6 +38,14 @@ object Storage {
         return rule.windowMin * 60_000L
     }
 
+    /**
+     * Minutes to show in the "X/Y min used" pill: partial minutes round up
+     * (any use shows at least 1), capped at the allowance so slight overshoot
+     * never displays as "6/5".
+     */
+    fun displayedUsedMin(usedMs: Long, allowMin: Int): Long =
+        minOf((usedMs + 59_999) / 60_000, allowMin.toLong())
+
     // ---- persistence: two JSON blobs in SharedPreferences ----
     //
     //   rules: {"com.instagram.android": {"allow": 5, "window": 120}, ...}
