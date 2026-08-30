@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.content.ComponentName
 import android.content.Intent
 import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.provider.Settings
 import android.text.Html
@@ -132,6 +133,20 @@ class MainActivity : Activity() {
             val window = numberField(rule.windowMin)
             rows[pkg] = allow to window
 
+            // Small pill right after the name showing budget already spent.
+            val usedMs = Storage.usedMs(
+                Storage.loadIntervals(this, pkg), rule.windowMin, System.currentTimeMillis())
+            val usedMin = minOf((usedMs + 59_999) / 60_000, rule.allowMin.toLong())
+            val usedBubble = TextView(this).apply {
+                text = "$usedMin/${rule.allowMin} min used"
+                textSize = 12f
+                setPadding(20, 8, 20, 8)
+                background = GradientDrawable().apply {
+                    cornerRadius = 40f
+                    setColor(0xFFE0E0E0.toInt())
+                }
+            }
+
             val titleLine = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -140,8 +155,12 @@ class MainActivity : Activity() {
                 addView(TextView(context).apply {
                     text = labelFor(pkg)
                     textSize = 18f
-                    setPadding(24, 0, 0, 0)
-                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                    maxLines = 1
+                    setPadding(24, 0, 16, 0)
+                })
+                addView(usedBubble)
+                addView(View(context),
+                    LinearLayout.LayoutParams(0, 0, 1f))   // spacer pushes ✕ to the edge
                 addView(Button(context).apply {
                     text = "✕"
                     setOnClickListener { removeApp(pkg) }
