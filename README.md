@@ -7,26 +7,44 @@ Personal Android app blocker — like [siteblock](https://github.com/csapuntz/si
 Pick apps and give each a budget: **allow X minutes per rolling Y minutes**. When the budget
 is spent, opening the app bounces you to a "blocked, try again in N min" screen.
 
-No dependencies, no network, no analytics. Four Kotlin files:
+No dependencies, no network, no analytics. Everything stays on your phone.
 
-| File                 | What it does                                                               |
-| -------------------- | -------------------------------------------------------------------------- |
-| `MainActivity.kt`      | Home screen: blocked apps with editable budgets (auto-saved)               |
-| `AppPickerActivity.kt` | "Block an app" picker: all installed apps with checkboxes                  |
-| `BlockerService.kt`    | Accessibility service that watches the foreground app and enforces budgets |
-| `BlockedActivity.kt`   | The full-screen "blocked" wall                                             |
-| `Storage.kt`           | Rules + usage log as JSON in SharedPreferences                             |
+## What exactly gets blocked
 
-## Build
+The mental model: **it's a door on the app's screen, not a gag on the app.**
+The app lives its normal background life — you just can't look at it.
 
-Needs Java 17 and the Android SDK (`sdk.dir` in `local.properties`).
+**Blocked during a block window:**
 
-```sh
-./gradlew assembleDebug
-# -> app/build/outputs/apk/debug/app-debug.apk
+- **Opening the app** — from the launcher, recents, widgets, share sheet, links,
+  anything. The moment the app's window hits the foreground you're bounced to home
+  and shown the block wall.
+- **Tapping one of its notifications** — the notification arrives and is readable,
+  but tapping it opens the app → blocked like any other open.
+- **Overstaying** — if you're mid-scroll when the budget runs out (checked every
+  5 seconds), you get kicked out.
 
-./gradlew test   # unit tests for the rolling-window math
-```
+**NOT blocked:**
+
+- **Notifications** — they arrive, buzz, and show on the lock screen exactly as
+  always. Inline actions (e.g. replying to a message from the notification) work,
+  since they never open the app's window.
+- **Background activity** — messages keep syncing, downloads keep running, audio
+  keeps playing. A blocked Spotify keeps playing what's queued; you just can't
+  open its UI.
+- The budget clock only ticks while the app is **on screen** — background use
+  costs nothing.
+
+**Edge cases:**
+
+- **Incoming calls in blocked apps** (WhatsApp/Telegram): the ring notification
+  appears, but the full-screen incoming-call UI is the app's window — answering
+  while the app is over budget will likely get bounced. Think twice before
+  blocking an app you take calls on.
+- **Picture-in-picture** mini-players are untested; entering the app to start one
+  is blocked regardless.
+- A blocked app's content shown *inside another app* (e.g. a YouTube video
+  embedded in a browser) is not blocked — only the app's own windows are.
 
 ## Install (via adb — read this, it saves you two roadblocks)
 
