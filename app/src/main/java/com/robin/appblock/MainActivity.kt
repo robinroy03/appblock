@@ -208,10 +208,19 @@ class MainActivity : Activity() {
         }
     }
 
+    // Confirmation guards against accidental taps on the ✕ button.
     private fun removeApp(pkg: String) {
-        save()
-        Storage.removeApp(this, pkg)
-        rebuild()
+        AlertDialog.Builder(this)
+            .setIcon(iconFor(pkg))
+            .setTitle("Remove ${labelFor(pkg)}?")
+            .setMessage("Are you sure you want to remove the limits for this app?")
+            .setPositiveButton("Yes") { _, _ ->
+                save()
+                Storage.removeApp(this, pkg)
+                rebuild()
+            }
+            .setNegativeButton("No", null)
+            .show()
     }
 
     private fun save() {
