@@ -28,14 +28,8 @@
             android:exported="false"
             android:label="Choose apps to block" />
 
-        <!-- The "you're blocked" wall. noHistory so it never lingers in the back stack. -->
-        <activity
-            android:name=".BlockedActivity"
-            android:exported="false"
-            android:noHistory="true"
-            android:excludeFromRecents="true" />
-
-        <!-- Accessibility service: Android calls us the moment any app comes to the foreground. -->
+        <!-- Accessibility service: Android calls us the moment any app comes to the
+             foreground. It also draws the block-wall overlay itself. -->
         <service
             android:name=".BlockerService"
             android:exported="false"

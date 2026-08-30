@@ -68,6 +68,14 @@ class StorageTest {
     }
 
     @Test
+    fun `ceilMin - partial minutes round up`() {
+        assertEquals(0L, Storage.ceilMin(0))
+        assertEquals(1L, Storage.ceilMin(1))
+        assertEquals(1L, Storage.ceilMin(60_000))
+        assertEquals(2L, Storage.ceilMin(60_001))
+    }
+
+    @Test
     fun `used pill - zero use shows zero`() {
         assertEquals(0L, Storage.displayedUsedMin(0, 5))
     }

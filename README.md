@@ -20,12 +20,12 @@ The app lives its normal background life — you just can't look at it.
 **Blocked during a block window:**
 
 - **Opening the app** — from the launcher, recents, widgets, share sheet, links,
-  anything. The moment the app's window hits the foreground you're bounced to home
-  and shown the block wall.
+  anything. The moment the app's window hits the foreground the block wall covers
+  it, with a button to go home.
 - **Tapping one of its notifications** — the notification arrives and is readable,
   but tapping it opens the app → blocked like any other open.
 - **Overstaying** — if you're mid-scroll when the budget runs out (checked every
-  5 seconds), you get kicked out.
+  5 seconds), the wall drops over the app.
 
 **NOT blocked:**
 
