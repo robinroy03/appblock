@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.ComponentName
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -141,9 +142,11 @@ class MainActivity : Activity() {
                 text = "$usedMin/${rule.allowMin} min used"
                 textSize = 12f
                 setPadding(20, 8, 20, 8)
+                val night = (resources.configuration.uiMode and
+                    Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
                 background = GradientDrawable().apply {
                     cornerRadius = 40f
-                    setColor(0xFFE0E0E0.toInt())
+                    setColor(if (night) 0xFF3A3A3A.toInt() else 0xFFE0E0E0.toInt())
                 }
             }
 
@@ -207,9 +210,7 @@ class MainActivity : Activity() {
 
     private fun removeApp(pkg: String) {
         save()
-        val rules = Storage.loadRules(this).toMutableMap()
-        rules.remove(pkg)
-        Storage.saveRules(this, rules)
+        Storage.removeApp(this, pkg)
         rebuild()
     }
 

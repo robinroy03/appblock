@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light theme; the values-night twin swaps in the dark parent
+         automatically when the device is in dark mode. -->
+    <style name="AppTheme" parent="@android:style/Theme.Material.Light" />
+</resources>

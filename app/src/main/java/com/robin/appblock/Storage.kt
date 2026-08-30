@@ -100,6 +100,16 @@ object Storage {
         prefs(ctx).edit().putString("usage", all.toString()).apply()
     }
 
+    /** Remove an app's rule AND its usage log, so nothing orphaned stays behind. */
+    fun removeApp(ctx: Context, pkg: String) {
+        val rules = loadRules(ctx).toMutableMap()
+        rules.remove(pkg)
+        saveRules(ctx, rules)
+        val usage = loadUsage(ctx)
+        usage.remove(pkg)
+        prefs(ctx).edit().putString("usage", usage.toString()).apply()
+    }
+
     // Convenience wrappers joining persistence with the pure math above.
 
     fun usedMsInWindow(ctx: Context, pkg: String, windowMin: Int): Long =
