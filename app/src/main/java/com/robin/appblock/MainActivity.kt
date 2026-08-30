@@ -1,13 +1,17 @@
 package com.robin.appblock
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ComponentName
 import android.content.Intent
 import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.provider.Settings
+import android.text.Html
 import android.text.InputType
+import android.text.method.LinkMovementMethod
 import android.view.Gravity
+import android.view.MenuItem
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
@@ -32,6 +36,12 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // (i) icon in the top-left of the action bar -> About dialog.
+        actionBar?.apply {
+            setDisplayHomeAsUpEnabled(true)
+            setHomeAsUpIndicator(android.R.drawable.ic_menu_info_details)
+        }
+
         enableButton = Button(this).apply {
             text = "Enable accessibility service (required)"
             setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
@@ -55,6 +65,32 @@ class MainActivity : Activity() {
             addView(list)
         }
         setContentView(ScrollView(this).apply { addView(root) })
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == android.R.id.home) {
+            showAbout()
+            return true
+        }
+        return super.onOptionsItemSelected(item)
+    }
+
+    private fun showAbout() {
+        val message = TextView(this).apply {
+            text = Html.fromHtml(
+                "This app is open source:<br>" +
+                "<a href=\"https://github.com/robinroy03/appblock\">github.com/robinroy03/appblock</a>" +
+                "<br><br>Made with ❤️ by <a href=\"https://x.com/_RobinRoy\">robin</a>",
+                Html.FROM_HTML_MODE_LEGACY)
+            movementMethod = LinkMovementMethod.getInstance()
+            textSize = 16f
+            setPadding(48, 32, 48, 16)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("About AppBlock")
+            .setView(message)
+            .setPositiveButton("OK", null)
+            .show()
     }
 
     override fun onResume() {
