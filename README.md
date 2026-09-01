@@ -13,9 +13,9 @@ No dependencies, no network, no analytics. Everything stays on your phone.
 
 ## Tie yourself to the mast
 
-![Ulysses and the Sirens](public/John_William_Waterhouse_-_Ulysses_and_the_Sirens_(1891).jpg)
+![Ulysses and the Sirens](<public/John_William_Waterhouse_-_Ulysses_and_the_Sirens_(1891).jpg>)
 
-*Ulysses and the Sirens, John William Waterhouse, 1891. That's him on the mast.*
+_Ulysses and the Sirens, John William Waterhouse, 1891. That's him on the mast._
 
 Odysseus had to sail past the Sirens, whose song lured every sailor to
 shipwreck. Every captain before him knew the danger. Knowing was never enough.
@@ -36,32 +36,32 @@ enough to check in, never enough to drown.
 
 **Blocked during a block window:**
 
-- **Opening the app** — from the launcher, recents, widgets, share sheet, links,
+- **Opening the app:** from the launcher, recents, widgets, share sheet, links,
   anything. The moment the app's window hits the foreground the block wall covers
   it, with a button to go home.
-- **Tapping one of its notifications** — the notification arrives and is readable,
+- **Tapping one of its notifications:** the notification arrives and is readable,
   but tapping it opens the app → blocked like any other open.
-- **Overstaying** — if you're mid-scroll when the budget runs out (checked every
+- **Overstaying:** if you're mid-scroll when the budget runs out (checked every
   5 seconds), the wall drops over the app.
 
 **NOT blocked:**
 
-- **Notifications** — they arrive, buzz, and show on the lock screen exactly as
+- **Notifications:** they arrive, buzz, and show on the lock screen exactly as
   always. Inline actions (e.g. replying to a message from the notification) work,
   since they never open the app's window.
-- **Background activity** — messages keep syncing, downloads keep running, audio
+- **Background activity:** messages keep syncing, downloads keep running, audio
   keeps playing. A blocked Spotify keeps playing what's queued; you just can't
   open its UI.
-- The budget clock only ticks while the app is **on screen** — background use
+- The budget clock only ticks while the app is **on screen**. Background use
   costs nothing.
 
 **Edge cases:**
 
 - **Incoming calls in blocked apps** (WhatsApp/Telegram): the ring notification
-  appears, but the full-screen incoming-call UI is the app's window — answering
+  appears, but the full-screen incoming-call UI is the app's window. Answering
   while the app is over budget will likely get bounced. Think twice before
   blocking an app you take calls on.
-- **Picture-in-picture** mini-players are untested; entering the app to start one
+- **Picture-in-picture** mini-players keep working; entering the app to start one
   is blocked regardless.
 - A blocked app's content shown _inside another app_ (e.g. a YouTube video
-  embedded in a browser) is not blocked — only the app's own windows are.
+  embedded in a browser) is not blocked. Only the app's own windows are.
