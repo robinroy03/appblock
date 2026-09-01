@@ -28,12 +28,16 @@ Build:
 
 ## Build → phone loop (phone connected over USB)
 
-After every successful build:
-
 ```sh
-cp app/build/outputs/apk/debug/app-debug.apk appblock.apk   # root copy, gitignored
-adb install -r appblock.apk                                 # -r keeps data + accessibility grant
+scripts/deploy.sh          # tests + release APK + adb install -r (keeps data/grants)
+scripts/fresh-install.sh   # same build, but uninstall first: wipes all app state
+                           # to test the first-run flow
 ```
+
+Both handle JDK 17 and the adb path (via `scripts/env.sh`) themselves. Use
+`deploy.sh` after every change; `fresh-install.sh` only when the fresh-install
+experience itself is being tested — it deletes the user's rules and the
+accessibility grant.
 
 Install via `adb`, not by copying the APK to the phone — adb installs skip
 Google Play Protect's block and the Android 13+ "restricted setting" guard on
