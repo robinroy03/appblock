@@ -11,7 +11,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.Configuration
 import android.graphics.PixelFormat
-import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -44,12 +43,16 @@ class BlockerService : AccessibilityService() {
     private var overlay: LinearLayout? = null
     private var overlayPkg: String? = null   // which app the wall is covering
 
-    // "Stop the app" button on the usage warning: an accessibility service
-    // can't force-kill another app, but going home backgrounds it, which is
-    // what stops the usage clock (same as the block wall's button).
+    // Tapping a usage warning backgrounds the app it's about. An accessibility
+    // service can't force-kill anything, but going home is what stops the usage
+    // clock (same as the block wall's button). Tapped from anywhere else the
+    // notification just dismisses, so a stale warning can't yank the user out
+    // of whatever they've since moved on to.
     private val goHomeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            performGlobalAction(GLOBAL_ACTION_HOME)
+            if (Storage.tapGoesHome(intent.getStringExtra(EXTRA_PKG), currentPkg)) {
+                performGlobalAction(GLOBAL_ACTION_HOME)
+            }
         }
     }
 
@@ -118,19 +121,23 @@ class BlockerService : AccessibilityService() {
             val pct = Storage.usedPct(usedMs, rule.allowMin)
             val min = Storage.fmtMin(usedMs)
             val nm = getSystemService(NotificationManager::class.java)
+            // HIGH importance so the warning pops up over the app it's about.
+            // Channel importance is locked in at creation, so this is a fresh
+            // channel id ("usage" shipped as DEFAULT); drop the old one.
+            nm.deleteNotificationChannel("usage")
             nm.createNotificationChannel(NotificationChannel(
-                "usage", "Usage warnings", NotificationManager.IMPORTANCE_DEFAULT))
-            val goHome = PendingIntent.getBroadcast(this, 0,
-                Intent(ACTION_GO_HOME).setPackage(packageName),
-                PendingIntent.FLAG_IMMUTABLE)
-            nm.notify(pkg.hashCode(), Notification.Builder(this, "usage")
+                CHANNEL_USAGE, "Usage warnings", NotificationManager.IMPORTANCE_HIGH))
+            // One PendingIntent per app: distinct request codes keep each
+            // notification's package extra its own.
+            val goHome = PendingIntent.getBroadcast(this, pkg.hashCode(),
+                Intent(ACTION_GO_HOME).setPackage(packageName).putExtra(EXTRA_PKG, pkg),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            nm.notify(pkg.hashCode(), Notification.Builder(this, CHANNEL_USAGE)
                 .setSmallIcon(android.R.drawable.ic_lock_lock)
                 .setContentTitle("AppBlock")
                 .setContentText("You've used $pct% ($min min) of your usage for ${labelFor(pkg)}")
                 .setAutoCancel(true)
-                .addAction(Notification.Action.Builder(
-                    Icon.createWithResource(this, android.R.drawable.ic_lock_power_off),
-                    "Stop the app", goHome).build())
+                .setContentIntent(goHome)
                 .build())
         }
         if (level != last) Storage.setWarnLevel(this, pkg, level)
@@ -208,5 +215,7 @@ class BlockerService : AccessibilityService() {
 
     companion object {
         private const val ACTION_GO_HOME = "com.robin.appblock.action.GO_HOME"
+        private const val EXTRA_PKG = "pkg"
+        private const val CHANNEL_USAGE = "usage_hi"
     }
 }

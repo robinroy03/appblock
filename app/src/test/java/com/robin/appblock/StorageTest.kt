@@ -130,6 +130,20 @@ class StorageTest {
     }
 
     @Test
+    fun `warning tap - goes home only while that app is in the foreground`() {
+        val insta = "com.instagram.android"
+        // Still scrolling the app the warning is about -> background it.
+        assertEquals(true, Storage.tapGoesHome(insta, insta))
+        // Already moved on to something else -> the tap just dismisses.
+        assertEquals(false, Storage.tapGoesHome(insta, "com.android.chrome"))
+        // Nothing tracked (home screen, or the app got blocked) -> do nothing.
+        assertEquals(false, Storage.tapGoesHome(insta, null))
+        // Malformed intent with no package extra -> never acts.
+        assertEquals(false, Storage.tapGoesHome(null, insta))
+        assertEquals(false, Storage.tapGoesHome(null, null))
+    }
+
+    @Test
     fun `picker durations - minutes, whole hours, mixed`() {
         assertEquals("0m", Storage.fmtDuration(0))
         assertEquals("0m", Storage.fmtDuration(59_999))

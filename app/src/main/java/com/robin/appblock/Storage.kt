@@ -99,6 +99,15 @@ object Storage {
     }
 
     /**
+     * Whether tapping an app's usage warning should send the user home: only
+     * when that app is still the one in the foreground, so backgrounding it
+     * actually stops the usage clock. Tapped after the user has already moved
+     * on, the notification just dismisses rather than interrupting them.
+     */
+    fun tapGoesHome(notifPkg: String?, foregroundPkg: String?): Boolean =
+        notifPkg != null && notifPkg == foregroundPkg
+
+    /**
      * Minutes to show in the "X/Y min used" pill: partial minutes round up
      * (any use shows at least 1), capped at the allowance so slight overshoot
      * never displays as "6/5".
