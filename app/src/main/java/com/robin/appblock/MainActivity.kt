@@ -1,17 +1,16 @@
 package com.robin.appblock
 
-import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.NotificationManager
-import android.content.pm.PackageManager
-import android.os.Build
 import android.content.ComponentName
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.text.Html
 import android.text.InputType
@@ -35,7 +34,9 @@ import android.widget.TextView
  */
 class MainActivity : Activity() {
 
-    private lateinit var enableButton: Button
+    // One "(required)" button + why-blurb per Storage.Requirement, generated
+    // from the enum: a future requirement shows up here with no extra wiring.
+    private val reqViews = mutableMapOf<Storage.Requirement, List<View>>()
     private lateinit var notifReminder: LinearLayout
     private lateinit var list: LinearLayout
     // package name -> (allow field, window field)
@@ -48,26 +49,35 @@ class MainActivity : Activity() {
             startActivity(Intent(this, OnboardingActivity::class.java))
         }
 
-        enableButton = Button(this).apply {
-            text = "Enable accessibility service (required)"
-            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        // Ask nicely: each required setting gets its button plus a "Why …?"
+        // blurb right under it saying what it's for. Granted ones disappear
+        // (in onResume), so whatever's left naturally moves to the top.
+        for (req in Storage.Requirement.entries) {
+            val button = Button(this).apply {
+                text = req.button
+                setOnClickListener { requirementFix(req) }
+            }
+            val blurb = TextView(this).apply {
+                text = "Why ${req.whyWord}? ${req.why}"
+                textSize = 13f
+                alpha = 0.7f
+                setPadding(16, 0, 16, 16)
+            }
+            reqViews[req] = listOf(button, blurb)
         }
         val addButton = Button(this).apply {
             text = "+ Block an app"
             setOnClickListener {
-                // Blocking is only enforced by the accessibility service; adding
-                // apps before it's on would silently do nothing.
-                if (!serviceEnabled()) {
+                // Blocking only works with every required setting on; adding
+                // apps before then would silently do nothing. One popup names
+                // everything still missing; the home-screen buttons fix them.
+                val missing = missingRequirements()
+                if (missing.isNotEmpty()) {
                     AlertDialog.Builder(this@MainActivity)
                         .setIcon(android.R.drawable.ic_dialog_info)
-                        .setTitle("Accessibility service is off")
-                        .setMessage("AppBlock can't block anything until its " +
-                            "accessibility service is enabled. Turn it on first, " +
-                            "then pick the apps to block.")
-                        .setPositiveButton("Open settings") { _, _ ->
-                            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                        }
-                        .setNegativeButton("Cancel", null)
+                        .setTitle("Finish setting up first")
+                        .setMessage(Storage.requirementsMessage(missing))
+                        .setPositiveButton("OK", null)
                         .show()
                     return@setOnClickListener
                 }
@@ -75,37 +85,20 @@ class MainActivity : Activity() {
                 startActivity(Intent(this@MainActivity, AppPickerActivity::class.java))
             }
         }
-        // Info card shown while notifications are off (unless permanently ✕-ed):
-        // tap the card to fix it, tap ✕ to dismiss (with a confirmation).
-        val night = (resources.configuration.uiMode and
-            Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        notifReminder = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(28, 12, 4, 12)
-            background = GradientDrawable().apply {
-                cornerRadius = 24f
-                setColor(if (night) 0xFF33301F.toInt() else 0xFFFFF8E1.toInt())
-                setStroke(3, 0xFFFFB300.toInt())
-            }
-            setOnClickListener { openNotificationSettings() }
-            addView(ImageView(context).apply {
-                setImageResource(android.R.drawable.ic_dialog_info)
-            })
-            addView(TextView(context).apply {
-                text = "Notifications are off, so AppBlock can't warn you " +
-                    "when you're close to using up an app's allowance. " +
-                    "Tap to turn them on."
-                textSize = 14f
-                setPadding(24, 12, 8, 12)
-            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            addView(TextView(context).apply {
-                text = "✕"
-                textSize = 18f
-                setPadding(28, 28, 28, 28)
-                setOnClickListener { confirmDismissReminder() }
-            })
-        }
+        // Info card shown while notifications are off (unless permanently ✕-ed).
+        notifReminder = ReminderCard.make(
+            this,
+            message = "Notifications are off, so AppBlock can't warn you " +
+                "when you're close to using up an app's allowance. " +
+                "Tap to turn them on.",
+            confirmTitle = "Skip usage warnings?",
+            confirmBody = "Without notifications, AppBlock can't let you know " +
+                "when you're about to use up an app's allowance. The first " +
+                "you'll hear of it is the block wall.\n\nHide this reminder " +
+                "anyway? (You can still enable notifications later from the " +
+                "About page.)",
+            onFix = ::openNotificationSettings,
+            onHideForever = { Storage.setNotifReminderDismissed(this) })
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         val root = LinearLayout(this).apply {
@@ -113,7 +106,7 @@ class MainActivity : Activity() {
             setPadding(32, 32, 32, 32)
             // Absorbs focus when a budget field's cursor is dismissed via ✓.
             isFocusableInTouchMode = true
-            addView(enableButton)
+            for (views in reqViews.values) for (v in views) addView(v)
             addView(notifReminder, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -158,16 +151,23 @@ class MainActivity : Activity() {
             textSize = 16f
             setPadding(48, 32, 48, 16)
         }
-        // Always-available path to fix permissions, even after the home-screen
-        // reminder was ✕-ed away. Only shown while something is actually off.
-        val permsLink = TextView(this).apply {
-            text = Html.fromHtml("<u>Some permissions not enabled</u>",
+        // Always-available path to the permissions checklist: the amber alert
+        // while something is off (no ✕, it goes away by being fixed), a calm
+        // "review" link once everything is on.
+        val allGood = missingRequirements().isEmpty() && notificationsEnabled()
+        val permsAlert = ReminderCard.make(
+            this,
+            message = "Some permissions are not enabled. Tap to review and " +
+                "fix them.",
+            onFix = ::showPermissionsDialog)
+        permsAlert.visibility = if (allGood) View.GONE else View.VISIBLE
+        val reviewLink = TextView(this).apply {
+            text = Html.fromHtml("<u>Review permissions</u>",
                 Html.FROM_HTML_MODE_LEGACY)
             textSize = 16f
             setTextColor(message.linkTextColors)
             setPadding(48, 0, 48, 24)
-            visibility = if (notificationsEnabled() && serviceEnabled())
-                View.GONE else View.VISIBLE
+            visibility = if (allGood) View.VISIBLE else View.GONE
             setOnClickListener { showPermissionsDialog() }
         }
         // Plain link (not a button) that reopens the onboarding screen.
@@ -186,7 +186,11 @@ class MainActivity : Activity() {
             .setView(LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 addView(message)
-                addView(permsLink)
+                addView(permsAlert, LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { leftMargin = 32; rightMargin = 32; bottomMargin = 24 })
+                addView(reviewLink)
                 addView(manifesto)
             })
             .setPositiveButton("OK", null)
@@ -195,35 +199,55 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        // Coming back from the settings page or the app picker: refresh both.
-        enableButton.visibility = if (serviceEnabled()) View.GONE else View.VISIBLE
+        // Coming back from the settings page or the app picker: refresh all.
+        for ((req, views) in reqViews) {
+            val vis = if (requirementMet(req)) View.GONE else View.VISIBLE
+            for (v in views) v.visibility = vis
+        }
         notifReminder.visibility =
             if (!notificationsEnabled() && !Storage.notifReminderDismissed(this))
                 View.VISIBLE else View.GONE
         rebuild()
         refreshPermRows?.invoke()
-
-        // One-time system notification prompt, deferred until the manifesto has
-        // been read so a brand-new user isn't greeted with a popup.
-        if (Build.VERSION.SDK_INT >= 33 && Storage.onboardingSeen(this) &&
-            !Storage.notifPromptAsked(this) &&
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
-                PackageManager.PERMISSION_GRANTED) {
-            Storage.setNotifPromptAsked(this)
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
-        }
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        // Granted from the prompt -> the reminder card no longer applies.
-        notifReminder.visibility =
-            if (!notificationsEnabled() && !Storage.notifReminderDismissed(this))
-                View.VISIBLE else View.GONE
     }
 
     private fun notificationsEnabled() =
         getSystemService(NotificationManager::class.java).areNotificationsEnabled()
+
+    private fun batteryExempt() =
+        getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
+
+    // Live state + fix path per requirement. Both `when`s are exhaustive, so
+    // adding a Storage.Requirement entry won't compile until it's wired here —
+    // and everything else (buttons, blurbs, popup, About rows) follows free.
+
+    private fun requirementMet(req: Storage.Requirement): Boolean = when (req) {
+        Storage.Requirement.ACCESSIBILITY -> serviceEnabled()
+        Storage.Requirement.BATTERY -> batteryExempt()
+    }
+
+    private fun requirementFix(req: Storage.Requirement) {
+        when (req) {
+            Storage.Requirement.ACCESSIBILITY ->
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            // The direct "allow?" dialog can only grant. Once granted, tapping
+            // the row goes to the battery-optimization list instead, where the
+            // exemption can be reviewed and undone (find AppBlock there).
+            Storage.Requirement.BATTERY ->
+                if (batteryExempt())
+                    startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                else requestBatteryExemption()
+        }
+    }
+
+    private fun missingRequirements(): List<Storage.Requirement> =
+        Storage.Requirement.entries.filter { !requirementMet(it) }
+
+    /** System dialog asking to exempt AppBlock from battery optimization. */
+    private fun requestBatteryExemption() {
+        startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+            Uri.parse("package:$packageName")))
+    }
 
     /** The app's own notification-settings page: works even after a permanent
      *  "don't allow" on the runtime prompt. */
@@ -261,47 +285,27 @@ class MainActivity : Activity() {
             }
             return view to update
         }
-        val (accRow, accUpdate) = row(
-            "Accessibility service",
-            "Required. Sees which app is open and draws the block wall.",
-            ::serviceEnabled) { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-        val (notifRow, notifUpdate) = row(
-            "Notifications",
-            "Warns you at 50% and 90% of an app's allowance.",
-            ::notificationsEnabled) { openNotificationSettings() }
-        val (usageRow, usageUpdate) = row(
-            "Usage access",
-            "Optional. Shows screen time next to each app in the picker.",
-            { usageAccessGranted(this) }) {
-            startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-        }
-        refreshPermRows = { accUpdate(); notifUpdate(); usageUpdate() }
+        // Required rows come straight from the Requirement enum; optional
+        // extras follow. Each entry is (view, refresh-the-✓/✗ closure).
+        val perms = Storage.Requirement.entries.map { req ->
+            row(req.title, req.permsNote, { requirementMet(req) }, { requirementFix(req) })
+        } + listOf(
+            row("Notifications",
+                "Optional. Warns you at 50% and 90% of an app's allowance.",
+                ::notificationsEnabled, ::openNotificationSettings),
+            row("Usage access",
+                "Optional. Shows screen time next to each app in the picker.",
+                { usageAccessGranted(this) },
+                { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }))
+        refreshPermRows = { for ((_, update) in perms) update() }
         AlertDialog.Builder(this)
             .setTitle("Permissions")
             .setView(LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                addView(accRow)
-                addView(notifRow)
-                addView(usageRow)
+                for ((view, _) in perms) addView(view)
             })
             .setPositiveButton("Done", null)
             .setOnDismissListener { refreshPermRows = null }
-            .show()
-    }
-
-    private fun confirmDismissReminder() {
-        AlertDialog.Builder(this)
-            .setTitle("Skip usage warnings?")
-            .setMessage("Without notifications, AppBlock can't let you know " +
-                "when you're about to use up an app's allowance. The first " +
-                "you'll hear of it is the block wall.\n\nHide this reminder " +
-                "anyway? (You can still enable notifications later from the " +
-                "About page.)")
-            .setPositiveButton("Yes, hide it") { _, _ ->
-                Storage.setNotifReminderDismissed(this)
-                notifReminder.visibility = View.GONE
-            }
-            .setNegativeButton("No", null)
             .show()
     }
 
@@ -329,16 +333,6 @@ class MainActivity : Activity() {
         // something the app can't deliver) but the rules stay saved, so
         // re-enabling brings everything straight back.
         when (Storage.homeList(serviceEnabled(), rules.size)) {
-            Storage.HomeList.SETUP_HINT -> {
-                list.addView(TextView(this).apply {
-                    text = "\nAppBlock won't work until its accessibility " +
-                        "service is enabled. That service is how the app " +
-                        "sees which app you're using and draws the block " +
-                        "wall over it when your time is up."
-                    gravity = Gravity.CENTER
-                })
-                return
-            }
             Storage.HomeList.PAUSED_NOTE -> {
                 list.addView(TextView(this).apply {
                     text = "\nBlocking is paused because the accessibility " +

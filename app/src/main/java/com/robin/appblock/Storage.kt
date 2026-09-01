@@ -54,19 +54,19 @@ object Storage {
     }
 
     /** What the home screen's list area shows. */
-    enum class HomeList { CARDS, EMPTY_HINT, PAUSED_NOTE, SETUP_HINT }
+    enum class HomeList { CARDS, EMPTY_HINT, PAUSED_NOTE }
 
     /**
-     * CARDS: service on, apps blocked. EMPTY_HINT ("no apps yet"): service on,
-     * nothing blocked. PAUSED_NOTE: service off but rules exist — they're kept,
-     * blocking just isn't enforced. SETUP_HINT: fresh state, service off and no
-     * rules — explain why the service is required.
+     * CARDS: service on, apps blocked. EMPTY_HINT ("no apps yet"): nothing
+     * blocked — on a fresh install the required-setup explanations live under
+     * the home-screen buttons, so the list area needs no setup hint of its
+     * own. PAUSED_NOTE: service off but rules exist — they're kept, blocking
+     * just isn't enforced.
      */
     fun homeList(serviceOn: Boolean, ruleCount: Int): HomeList = when {
-        serviceOn && ruleCount == 0 -> HomeList.EMPTY_HINT
+        ruleCount == 0 -> HomeList.EMPTY_HINT
         serviceOn -> HomeList.CARDS
-        ruleCount > 0 -> HomeList.PAUSED_NOTE
-        else -> HomeList.SETUP_HINT
+        else -> HomeList.PAUSED_NOTE
     }
 
     /** Screen-time durations for the app picker: "0m", "45m", "2h", "2h 12m". */
@@ -108,6 +108,51 @@ object Storage {
         notifPkg != null && notifPkg == foregroundPkg
 
     /**
+     * Everything AppBlock can't work without, as data. Each entry carries its
+     * own user-facing copy, and every surface generates itself from this
+     * list: the home screen's "(required)" buttons with their why-blurbs, the
+     * "+ Block an app" guard popup, the About permissions rows. Declaration
+     * order is fix-first priority (accessibility before anything — it's the
+     * core mechanism). A future requirement is one entry here plus a branch
+     * in MainActivity's requirementMet()/requirementFix(); those `when`s are
+     * exhaustive, so forgetting one is a compile error, not a stale screen.
+     */
+    enum class Requirement(
+        val title: String,     // row title in the About permissions dialog
+        val button: String,    // home-screen button label
+        val whyWord: String,   // "Why <word>?" heading on the home-screen blurb
+        val why: String,       // friendly explanation: home blurb + guard popup
+        val permsNote: String, // one-liner under the About permissions row
+    ) {
+        ACCESSIBILITY(
+            "Accessibility service",
+            "Enable accessibility service (required)",
+            "accessibility",
+            "That service is how AppBlock sees which app you're using and " +
+                "draws the block wall over it when your time is up.",
+            "Required. Sees which app is open and draws the block wall."),
+        BATTERY(
+            "Unrestricted battery",
+            "Allow background battery use (required)",
+            "battery",
+            "Your phone's battery saver puts background apps to sleep, and " +
+                "a sleeping blocker can't block. This lets AppBlock stay " +
+                "awake, at a tiny battery cost. So if your phone ever " +
+                "complains that AppBlock is running in the background, " +
+                "that's not a bug. That's the watchman staying on duty.",
+            "Required. Stops the phone's battery saver from killing the blocker."),
+    }
+
+    /**
+     * Body of the "+ Block an app" guard popup, composed on the fly: one
+     * segment per missing requirement, so the popup always matches exactly
+     * what's off — one requirement or several, always a single popup.
+     */
+    fun requirementsMessage(missing: List<Requirement>): String =
+        missing.joinToString("\n\n") { "${it.title}: ${it.why}" } +
+            "\n\nThe buttons on the home screen will get you set up."
+
+    /**
      * Minutes to show in the "X/Y min used" pill: partial minutes round up
      * (any use shows at least 1), capped at the allowance so slight overshoot
      * never displays as "6/5".
@@ -125,20 +170,20 @@ object Storage {
 
     fun onboardingSeen(ctx: Context) = prefs(ctx).getBoolean("onboarded", false)
 
-    // The one-time system notification prompt fires on the first home-screen
-    // visit AFTER onboarding, so a brand-new user isn't greeted with a popup.
-    fun notifPromptAsked(ctx: Context) = prefs(ctx).getBoolean("notifPromptAsked", false)
-
-    fun setNotifPromptAsked(ctx: Context) {
-        prefs(ctx).edit().putBoolean("notifPromptAsked", true).apply()
-    }
-
     // User tapped ✕ on the "notifications are off" reminder: never show it again.
     fun notifReminderDismissed(ctx: Context) =
         prefs(ctx).getBoolean("notifReminderDismissed", false)
 
     fun setNotifReminderDismissed(ctx: Context) {
         prefs(ctx).edit().putBoolean("notifReminderDismissed", true).apply()
+    }
+
+    // Same, for the app picker's "grant usage access" hint.
+    fun usageReminderDismissed(ctx: Context) =
+        prefs(ctx).getBoolean("usageReminderDismissed", false)
+
+    fun setUsageReminderDismissed(ctx: Context) {
+        prefs(ctx).edit().putBoolean("usageReminderDismissed", true).apply()
     }
 
     fun setOnboardingSeen(ctx: Context) {

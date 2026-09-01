@@ -1,6 +1,7 @@
 package com.robin.appblock
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.app.AppOpsManager
 import android.app.usage.UsageStatsManager
 import android.content.Context
@@ -25,7 +26,6 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
-import android.widget.Toast
 import java.util.Calendar
 
 /** True when the user has granted "Usage access" (a special app op with its own
@@ -99,27 +99,18 @@ class AppPickerActivity : Activity() {
                              else "Block ${selected.size} selected apps"
         }
 
-        // Same info-card style as the home screen's notification reminder.
-        usageCard = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(28, 12, 28, 12)
-            background = GradientDrawable().apply {
-                cornerRadius = 24f
-                setColor(if (night) 0xFF33301F.toInt() else 0xFFFFF8E1.toInt())
-                setStroke(3, 0xFFFFB300.toInt())
-            }
-            setOnClickListener { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
-            addView(ImageView(context).apply {
-                setImageResource(android.R.drawable.ic_dialog_info)
-            })
-            addView(TextView(context).apply {
-                text = "Grant usage access to see how much you use each app " +
-                    "(and sort by it). Tap to enable."
-                textSize = 14f
-                setPadding(24, 12, 0, 12)
-            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        }
+        // Same dismissible info card as the home screen's reminders.
+        usageCard = ReminderCard.make(
+            this,
+            message = "Grant usage access to see how much you use each app " +
+                "(and sort by it). Tap to enable.",
+            confirmTitle = "Hide this hint?",
+            confirmBody = "Without usage access, the picker can't show " +
+                "screen time or sort apps by it.\n\nHide this hint anyway? " +
+                "(You can still enable usage access later from the About " +
+                "page.)",
+            onFix = { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) },
+            onHideForever = { Storage.setUsageReminderDismissed(this) })
 
         val iconPx = (40 * resources.displayMetrics.density).toInt()
         val listView = ListView(this)
@@ -214,7 +205,8 @@ class AppPickerActivity : Activity() {
         super.onResume()
         // Coming back from the usage-access settings page (or first landing).
         haveUsage = usageAccessGranted(this)
-        usageCard.visibility = if (haveUsage) View.GONE else View.VISIBLE
+        usageCard.visibility = if (haveUsage || Storage.usageReminderDismissed(this))
+            View.GONE else View.VISIBLE
         if (haveUsage) loadUsage()
         // Usage sorts need usage data; fall back to name until access is
         // granted, then to the 7-days default unless the user chose a sort.
@@ -277,9 +269,18 @@ class AppPickerActivity : Activity() {
         setOnClickListener {
             val key = chips.entries.first { it.value.first == this }.key
             if (key != SortKey.NAME && !haveUsage) {
-                Toast.makeText(this@AppPickerActivity,
-                    "Turn on Usage access to sort by screen time",
-                    Toast.LENGTH_SHORT).show()
+                // A dead chip explains itself properly, with the fix a tap away.
+                AlertDialog.Builder(this@AppPickerActivity)
+                    .setIcon(android.R.drawable.ic_dialog_info)
+                    .setTitle("Sorting needs Usage access")
+                    .setMessage("These sorts rank apps by screen time, " +
+                        "which Android only shares after you grant " +
+                        "AppBlock the Usage access permission.")
+                    .setPositiveButton("Open settings") { _, _ ->
+                        startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                    }
+                    .setNegativeButton("Not now", null)
+                    .show()
                 return@setOnClickListener
             }
             userSorted = true

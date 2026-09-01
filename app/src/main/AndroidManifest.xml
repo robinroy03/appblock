@@ -5,6 +5,10 @@
     <!-- Heads-up notifications at 50%/90% of an app's usage allowance -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Lets us show the system "ignore battery optimizations?" dialog, so
+         aggressive OEM battery savers (OxygenOS etc.) don't kill the blocker -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <!-- Screen-time stats in the app picker; granted via the "Usage access"
          settings page, never a runtime prompt -->
     <uses-permission

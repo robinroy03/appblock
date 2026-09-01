@@ -1,6 +1,8 @@
 package com.robin.appblock
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -118,13 +120,13 @@ class StorageTest {
     }
 
     @Test
-    fun `home list - all four states`() {
-        // Fresh install: service off, no rules -> explain the required service.
-        assertEquals(Storage.HomeList.SETUP_HINT, Storage.homeList(false, 0))
+    fun `home list - three states`() {
+        // Nothing blocked -> the empty hint, service on or off: on a fresh
+        // install the setup explanations live under the required buttons.
+        assertEquals(Storage.HomeList.EMPTY_HINT, Storage.homeList(false, 0))
+        assertEquals(Storage.HomeList.EMPTY_HINT, Storage.homeList(true, 0))
         // Service off with rules -> "blocking is paused" note, rules kept.
         assertEquals(Storage.HomeList.PAUSED_NOTE, Storage.homeList(false, 3))
-        // Service on, nothing blocked yet -> the empty hint.
-        assertEquals(Storage.HomeList.EMPTY_HINT, Storage.homeList(true, 0))
         // Normal operation -> the app cards.
         assertEquals(Storage.HomeList.CARDS, Storage.homeList(true, 3))
     }
@@ -141,6 +143,23 @@ class StorageTest {
         // Malformed intent with no package extra -> never acts.
         assertEquals(false, Storage.tapGoesHome(null, insta))
         assertEquals(false, Storage.tapGoesHome(null, null))
+    }
+
+    @Test
+    fun `block-an-app guard - one popup naming every missing requirement`() {
+        // Both missing: each requirement contributes its own named segment,
+        // accessibility first (declaration order = fix-first priority)...
+        val both = Storage.requirementsMessage(Storage.Requirement.entries)
+        assertTrue(both.contains("Accessibility service"))
+        assertTrue(both.contains("Unrestricted battery"))
+        assertTrue(both.indexOf("Accessibility service") < both.indexOf("Unrestricted battery"))
+        // ...and the fix is pointed at the home-screen buttons, not a
+        // settings shortcut (the popup has only an OK button).
+        assertTrue(both.contains("home screen"))
+        // Only battery missing -> accessibility isn't mentioned.
+        val one = Storage.requirementsMessage(listOf(Storage.Requirement.BATTERY))
+        assertTrue(one.contains("Unrestricted battery"))
+        assertFalse(one.contains("Accessibility service"))
     }
 
     @Test
