@@ -41,6 +41,27 @@ object Storage {
     /** Whole minutes for display, any partial minute rounding up. */
     fun ceilMin(ms: Long): Long = (ms + 59_999) / 60_000
 
+    /** One "activity resumed"/"activity paused" entry from the system usage-event log. */
+    data class UsageEvent(val resumed: Boolean, val pkg: String)
+
+    /**
+     * Which app is in front after `events` (in time order), starting from
+     * `previous`. A resume puts its app in front. A pause only clears the
+     * front app if it's for that same app — on an app switch Android logs
+     * the old app's pause and the new app's resume in either order, and a
+     * pause of the app that just lost the foreground must not blank out the
+     * one that gained it. A pause with no resume after it (screen off, lock
+     * screen) leaves nothing in front.
+     */
+    fun foregroundFrom(events: List<UsageEvent>, previous: String?): String? {
+        var fg = previous
+        for (e in events) {
+            if (e.resumed) fg = e.pkg
+            else if (fg == e.pkg) fg = null
+        }
+        return fg
+    }
+
     // Usage-warning thresholds, as percent of the allowance.
     private val WARN_THRESHOLDS = listOf(50, 90)
 
@@ -57,15 +78,15 @@ object Storage {
     enum class HomeList { CARDS, EMPTY_HINT, PAUSED_NOTE }
 
     /**
-     * CARDS: service on, apps blocked. EMPTY_HINT ("no apps yet"): nothing
-     * blocked — on a fresh install the required-setup explanations live under
-     * the home-screen buttons, so the list area needs no setup hint of its
-     * own. PAUSED_NOTE: service off but rules exist — they're kept, blocking
-     * just isn't enforced.
+     * CARDS: every required setting on, apps blocked. EMPTY_HINT ("no apps
+     * yet"): nothing blocked — on a fresh install the required-setup
+     * explanations live under the home-screen buttons, so the list area
+     * needs no setup hint of its own. PAUSED_NOTE: a requirement is off but
+     * rules exist — they're kept, blocking just isn't enforced.
      */
-    fun homeList(serviceOn: Boolean, ruleCount: Int): HomeList = when {
+    fun homeList(blockingOn: Boolean, ruleCount: Int): HomeList = when {
         ruleCount == 0 -> HomeList.EMPTY_HINT
-        serviceOn -> HomeList.CARDS
+        blockingOn -> HomeList.CARDS
         else -> HomeList.PAUSED_NOTE
     }
 
@@ -112,10 +133,11 @@ object Storage {
      * own user-facing copy, and every surface generates itself from this
      * list: the home screen's "(required)" buttons with their why-blurbs, the
      * "+ Block an app" guard popup, the About permissions rows. Declaration
-     * order is fix-first priority (accessibility before anything — it's the
-     * core mechanism). A future requirement is one entry here plus a branch
-     * in MainActivity's requirementMet()/requirementFix(); those `when`s are
-     * exhaustive, so forgetting one is a compile error, not a stale screen.
+     * order is fix-first priority (seeing the foreground app before drawing
+     * over it — the core mechanism first). A future requirement is one entry
+     * here plus a branch in requirementMet() (Perms.kt) and MainActivity's
+     * requirementFix(); those `when`s are exhaustive, so forgetting one is a
+     * compile error, not a stale screen.
      */
     enum class Requirement(
         val title: String,     // row title in the About permissions dialog
@@ -124,13 +146,22 @@ object Storage {
         val why: String,       // friendly explanation: home blurb + guard popup
         val permsNote: String, // one-liner under the About permissions row
     ) {
-        ACCESSIBILITY(
-            "Accessibility service",
-            "Enable accessibility service (required)",
-            "accessibility",
-            "That service is how AppBlock sees which app you're using and " +
-                "draws the block wall over it when your time is up.",
-            "Required. Sees which app is open and draws the block wall."),
+        USAGE_ACCESS(
+            "Usage access",
+            "Allow usage access (required)",
+            "usage access",
+            "That's how AppBlock sees which app you're using, so it knows " +
+                "when your time in one is up. It also shows your screen " +
+                "time next to each app in the picker.",
+            "Required. Sees which app is open."),
+        OVERLAY(
+            "Display over other apps",
+            "Allow display over other apps (required)",
+            "display over other apps",
+            "The block wall is drawn on top of the app you've run out of " +
+                "time in. Without this, AppBlock can see you're over budget " +
+                "but can't show you the wall.",
+            "Required. Draws the block wall over the blocked app."),
         BATTERY(
             "Unrestricted battery",
             "Allow background battery use (required)",

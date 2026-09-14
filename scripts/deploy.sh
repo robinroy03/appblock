@@ -1,7 +1,7 @@
 #!/bin/sh -e
 # Everyday build -> phone loop: run the unit tests, build the release APK,
-# install it over USB. `-r` keeps app data and the accessibility grant, so
-# no re-setup is needed on the phone.
+# install it over USB. `-r` keeps app data and the permission grants, so no
+# re-setup is needed on the phone (the blocker restarts itself after the update).
 cd "$(dirname "$0")/.."
 . scripts/env.sh
 

@@ -9,11 +9,24 @@
          aggressive OEM battery savers (OxygenOS etc.) don't kill the blocker -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
-    <!-- Screen-time stats in the app picker; granted via the "Usage access"
+    <!-- How the blocker sees which app is in front (usage events), plus
+         screen-time stats in the app picker; granted via the "Usage access"
          settings page, never a runtime prompt -->
     <uses-permission
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
+
+    <!-- The block wall is an overlay window drawn over the blocked app;
+         granted via the "Display over other apps" settings page -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- The blocker is a foreground service (Android's only way to keep a
+         poller alive); "special use" is the type for things like this -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- Restart the blocker after a reboot -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- Lets us list all launchable apps on Android 11+ -->
     <queries>
@@ -47,18 +60,26 @@
             android:exported="false"
             android:label="Tie yourself to the mast" />
 
-        <!-- Accessibility service: Android calls us the moment any app comes to the
-             foreground. It also draws the block-wall overlay itself. -->
+        <!-- The blocker: polls usage events for the foreground app and draws
+             the block-wall overlay itself. -->
         <service
             android:name=".BlockerService"
             android:exported="false"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/blocker_service" />
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Watches which app is in the foreground to enforce the user's own screen-time limits" />
         </service>
+
+        <!-- Boot / in-place update: bring the blocker back. Both actions are
+             protected system broadcasts, so exported is safe here. -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

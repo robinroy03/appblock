@@ -3,14 +3,11 @@ package com.robin.appblock
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.NotificationManager
-import android.content.ComponentName
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
-import android.net.Uri
 import android.os.Bundle
-import android.os.PowerManager
 import android.provider.Settings
 import android.text.Html
 import android.text.InputType
@@ -154,7 +151,7 @@ class MainActivity : Activity() {
         // Always-available path to the permissions checklist: the amber alert
         // while something is off (no ✕, it goes away by being fixed), a calm
         // "review" link once everything is on.
-        val allGood = missingRequirements().isEmpty() && notificationsEnabled()
+        val allGood = allRequirementsMet(this) && notificationsEnabled()
         val permsAlert = ReminderCard.make(
             this,
             message = "Some permissions are not enabled. Tap to review and " +
@@ -201,9 +198,11 @@ class MainActivity : Activity() {
         super.onResume()
         // Coming back from the settings page or the app picker: refresh all.
         for ((req, views) in reqViews) {
-            val vis = if (requirementMet(req)) View.GONE else View.VISIBLE
+            val vis = if (requirementMet(this, req)) View.GONE else View.VISIBLE
             for (v in views) v.visibility = vis
         }
+        // Everything granted: make sure the blocker is up (no-op if it is).
+        BlockerService.start(this)
         notifReminder.visibility =
             if (!notificationsEnabled() && !Storage.notifReminderDismissed(this))
                 View.VISIBLE else View.GONE
@@ -214,39 +213,32 @@ class MainActivity : Activity() {
     private fun notificationsEnabled() =
         getSystemService(NotificationManager::class.java).areNotificationsEnabled()
 
-    private fun batteryExempt() =
-        getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
-
-    // Live state + fix path per requirement. Both `when`s are exhaustive, so
-    // adding a Storage.Requirement entry won't compile until it's wired here —
-    // and everything else (buttons, blurbs, popup, About rows) follows free.
-
-    private fun requirementMet(req: Storage.Requirement): Boolean = when (req) {
-        Storage.Requirement.ACCESSIBILITY -> serviceEnabled()
-        Storage.Requirement.BATTERY -> batteryExempt()
-    }
+    // Fix path per requirement (live state lives in Perms.kt). The `when` is
+    // exhaustive, so adding a Storage.Requirement entry won't compile until
+    // it's wired here — and everything else (buttons, blurbs, popup, About
+    // rows) follows free.
 
     private fun requirementFix(req: Storage.Requirement) {
         when (req) {
-            Storage.Requirement.ACCESSIBILITY ->
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            Storage.Requirement.USAGE_ACCESS ->
+                startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+            Storage.Requirement.OVERLAY ->
+                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, packageUri(this)))
             // The direct "allow?" dialog can only grant. Once granted, tapping
             // the row goes to the battery-optimization list instead, where the
             // exemption can be reviewed and undone (find AppBlock there).
             Storage.Requirement.BATTERY ->
-                if (batteryExempt())
+                if (batteryExempt(this))
                     startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                 else requestBatteryExemption()
         }
     }
 
-    private fun missingRequirements(): List<Storage.Requirement> =
-        Storage.Requirement.entries.filter { !requirementMet(it) }
+    private fun missingRequirements(): List<Storage.Requirement> = missingRequirements(this)
 
     /** System dialog asking to exempt AppBlock from battery optimization. */
     private fun requestBatteryExemption() {
-        startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-            Uri.parse("package:$packageName")))
+        startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, packageUri(this)))
     }
 
     /** The app's own notification-settings page: works even after a permanent
@@ -288,15 +280,11 @@ class MainActivity : Activity() {
         // Required rows come straight from the Requirement enum; optional
         // extras follow. Each entry is (view, refresh-the-✓/✗ closure).
         val perms = Storage.Requirement.entries.map { req ->
-            row(req.title, req.permsNote, { requirementMet(req) }, { requirementFix(req) })
+            row(req.title, req.permsNote, { requirementMet(this, req) }, { requirementFix(req) })
         } + listOf(
             row("Notifications",
                 "Optional. Warns you at 50% and 90% of an app's allowance.",
-                ::notificationsEnabled, ::openNotificationSettings),
-            row("Usage access",
-                "Optional. Shows screen time next to each app in the picker.",
-                { usageAccessGranted(this) },
-                { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }))
+                ::notificationsEnabled, ::openNotificationSettings))
         refreshPermRows = { for ((_, update) in perms) update() }
         AlertDialog.Builder(this)
             .setTitle("Permissions")
@@ -314,31 +302,22 @@ class MainActivity : Activity() {
         save()
     }
 
-    private fun serviceEnabled(): Boolean {
-        val enabled = Settings.Secure.getString(
-            contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
-        val me = ComponentName(this, BlockerService::class.java)
-        return enabled.split(':').any {
-            it == me.flattenToString() || it == me.flattenToShortString()
-        }
-    }
-
     /** One card per blocked app: [icon] Label [✕] / allow [5] min per [120] min. */
     private fun rebuild() {
         list.removeAllViews()
         rows.clear()
         val rules = Storage.loadRules(this)
 
-        // While accessibility is off the app cards hide (they'd promise
+        // While a required setting is off the app cards hide (they'd promise
         // something the app can't deliver) but the rules stay saved, so
-        // re-enabling brings everything straight back.
-        when (Storage.homeList(serviceEnabled(), rules.size)) {
+        // fixing it brings everything straight back.
+        when (Storage.homeList(allRequirementsMet(this), rules.size)) {
             Storage.HomeList.PAUSED_NOTE -> {
                 list.addView(TextView(this).apply {
-                    text = "\nBlocking is paused because the accessibility " +
-                        "service is off. Your ${rules.size} blocked " +
+                    text = "\nBlocking is paused because a required setting " +
+                        "above is off. Your ${rules.size} blocked " +
                         (if (rules.size == 1) "app is" else "apps are") +
-                        " saved and will reappear once you turn it back on."
+                        " saved and will reappear once it's back on."
                     gravity = Gravity.CENTER
                 })
                 return
@@ -450,7 +429,7 @@ class MainActivity : Activity() {
     }
 
     private fun save() {
-        // No rows means the list wasn't built (service off, blocking paused):
+        // No rows means the list wasn't built (blocking paused):
         // saving would rewrite the rules blob as empty and wipe every app.
         if (rows.isEmpty()) return
         val old = Storage.loadRules(this)

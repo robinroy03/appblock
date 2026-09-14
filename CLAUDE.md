@@ -1,7 +1,9 @@
 # CLAUDE.md
 
-AppBlock is a small Android app-blocker: an accessibility service watches the
-foreground app and draws a block wall when a blocked app exceeds its time budget.
+AppBlock is a small Android app-blocker: a foreground service polls the system
+usage-event log for the foreground app (via "Usage access") and draws a block
+wall over it ("Display over other apps") when a blocked app exceeds its time
+budget. No accessibility service.
 Plain Kotlin + Gradle, no Android Studio required.
 
 ## Setup
@@ -37,15 +39,15 @@ scripts/fresh-install.sh   # same build, but uninstall first: wipes all app stat
 Both handle JDK 17 and the adb path (via `scripts/env.sh`) themselves. Use
 `deploy.sh` after every change; `fresh-install.sh` only when the fresh-install
 experience itself is being tested — it deletes the user's rules and the
-accessibility grant.
+permission grants.
 
 Install via `adb`, not by copying the APK to the phone — adb installs skip
-Google Play Protect's block and the Android 13+ "restricted setting" guard on
-accessibility (see README for details). One-time phone setup: enable Developer
-options and USB debugging, then accept the USB-debugging prompt.
+Google Play Protect's block. One-time phone setup: enable Developer options and
+USB debugging, then accept the USB-debugging prompt.
 
-To verify a change, open AppBlock on the phone; the accessibility service and
-blocked-app rules survive an `-r` reinstall, so no re-setup is needed.
+To verify a change, open AppBlock on the phone; the permission grants and
+blocked-app rules survive an `-r` reinstall, and the blocker service restarts
+itself after the update, so no re-setup is needed.
 
 ## Conventions
 

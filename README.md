@@ -11,6 +11,11 @@ is spent, opening the app bounces you to a "blocked, try again in N min" screen.
 
 No dependencies, no network, no analytics. Everything stays on your phone.
 
+No accessibility service either: the blocker needs only "Usage access" (to see
+which app is in front) and "Display over other apps" (to draw the wall), plus a
+battery exemption so the phone doesn't put it to sleep. It runs as a foreground
+service, so a small "AppBlock is on duty" line sits in your notification shade.
+
 ## Tie yourself to the mast
 
 ![Ulysses and the Sirens](<public/John_William_Waterhouse_-_Ulysses_and_the_Sirens_(1891).jpg>)
@@ -37,8 +42,8 @@ enough to check in, never enough to drown.
 **Blocked during a block window:**
 
 - **Opening the app:** from the launcher, recents, widgets, share sheet, links,
-  anything. The moment the app's window hits the foreground the block wall covers
-  it, with a button to go home.
+  anything. Within about a second of the app's window hitting the foreground the
+  block wall covers it, with a button to go home.
 - **Tapping one of its notifications:** the notification arrives and is readable,
   but tapping it opens the app → blocked like any other open.
 - **Overstaying:** if you're mid-scroll when the budget runs out (checked every

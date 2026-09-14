@@ -147,19 +147,76 @@ class StorageTest {
 
     @Test
     fun `block-an-app guard - one popup naming every missing requirement`() {
-        // Both missing: each requirement contributes its own named segment,
-        // accessibility first (declaration order = fix-first priority)...
-        val both = Storage.requirementsMessage(Storage.Requirement.entries)
-        assertTrue(both.contains("Accessibility service"))
-        assertTrue(both.contains("Unrestricted battery"))
-        assertTrue(both.indexOf("Accessibility service") < both.indexOf("Unrestricted battery"))
+        // All missing: each requirement contributes its own named segment,
+        // in declaration order (= fix-first priority: see the app, then
+        // draw over it, then stay alive)...
+        val all = Storage.requirementsMessage(Storage.Requirement.entries)
+        assertTrue(all.contains("Usage access"))
+        assertTrue(all.contains("Display over other apps"))
+        assertTrue(all.contains("Unrestricted battery"))
+        assertTrue(all.indexOf("Usage access") < all.indexOf("Display over other apps"))
+        assertTrue(all.indexOf("Display over other apps") < all.indexOf("Unrestricted battery"))
         // ...and the fix is pointed at the home-screen buttons, not a
         // settings shortcut (the popup has only an OK button).
-        assertTrue(both.contains("home screen"))
-        // Only battery missing -> accessibility isn't mentioned.
+        assertTrue(all.contains("home screen"))
+        // Only battery missing -> the others aren't mentioned.
         val one = Storage.requirementsMessage(listOf(Storage.Requirement.BATTERY))
         assertTrue(one.contains("Unrestricted battery"))
-        assertFalse(one.contains("Accessibility service"))
+        assertFalse(one.contains("Usage access"))
+        assertFalse(one.contains("Display over other apps"))
+    }
+
+    // ---- foreground app from the usage-event log ----
+
+    private fun resumed(pkg: String) = Storage.UsageEvent(resumed = true, pkg = pkg)
+    private fun paused(pkg: String) = Storage.UsageEvent(resumed = false, pkg = pkg)
+    private val insta = "com.instagram.android"
+    private val launcher = "com.android.launcher3"
+
+    @Test
+    fun `foreground - no events keeps whatever was in front`() {
+        assertEquals(null, Storage.foregroundFrom(emptyList(), null))
+        assertEquals(insta, Storage.foregroundFrom(emptyList(), insta))
+    }
+
+    @Test
+    fun `foreground - a resume puts that app in front`() {
+        assertEquals(insta, Storage.foregroundFrom(listOf(resumed(insta)), null))
+        assertEquals(insta, Storage.foregroundFrom(listOf(resumed(insta)), launcher))
+    }
+
+    @Test
+    fun `foreground - app switch, whichever order Android logs the pair`() {
+        // Old app pauses, new app resumes: the common order.
+        assertEquals(insta,
+            Storage.foregroundFrom(listOf(paused(launcher), resumed(insta)), launcher))
+        // New app resumes first, then the old one pauses: the stale pause
+        // must not blank out the app that just took over.
+        assertEquals(insta,
+            Storage.foregroundFrom(listOf(resumed(insta), paused(launcher)), launcher))
+    }
+
+    @Test
+    fun `foreground - pause with nothing after it means nothing in front`() {
+        // Screen off / lock screen: the app pauses and nothing resumes.
+        assertEquals(null, Storage.foregroundFrom(listOf(paused(insta)), insta))
+        assertEquals(null, Storage.foregroundFrom(listOf(resumed(insta), paused(insta)), null))
+    }
+
+    @Test
+    fun `foreground - replaying the same events is harmless`() {
+        // Polls overlap a little, so events get folded more than once.
+        val batch = listOf(paused(launcher), resumed(insta))
+        val once = Storage.foregroundFrom(batch, launcher)
+        assertEquals(insta, Storage.foregroundFrom(batch, once))
+    }
+
+    @Test
+    fun `foreground - within-app screen changes stay on the same app`() {
+        // Moving between an app's own activities logs pause+resume of the
+        // same package; the app never leaves the foreground.
+        assertEquals(insta,
+            Storage.foregroundFrom(listOf(paused(insta), resumed(insta)), insta))
     }
 
     @Test

@@ -2,7 +2,6 @@ package com.robin.appblock
 
 import android.app.Activity
 import android.app.AlertDialog
-import android.app.AppOpsManager
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
@@ -10,7 +9,6 @@ import android.content.res.Configuration
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
-import android.os.Process
 import android.provider.Settings
 import android.text.Editable
 import android.text.InputType
@@ -27,15 +25,6 @@ import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
 import java.util.Calendar
-
-/** True when the user has granted "Usage access" (a special app op with its own
- *  Settings page — there is no runtime prompt for it). */
-fun usageAccessGranted(ctx: Context): Boolean {
-    @Suppress("DEPRECATION")
-    return ctx.getSystemService(AppOpsManager::class.java).checkOpNoThrow(
-        AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), ctx.packageName
-    ) == AppOpsManager.MODE_ALLOWED
-}
 
 /**
  * Picker screen: every launchable app (not yet blocked), with checkboxes and,
