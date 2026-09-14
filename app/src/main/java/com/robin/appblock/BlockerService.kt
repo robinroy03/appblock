@@ -15,6 +15,7 @@ import android.content.pm.ServiceInfo
 import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -57,6 +58,7 @@ class BlockerService : Service() {
 
     private var overlay: LinearLayout? = null
     private var overlayPkg: String? = null   // which app the wall is covering
+    private var timerDeadline: Long? = null  // what the session-timer notification counts down to
 
     // Tapping a usage warning backgrounds the app it's about. We can't
     // force-kill anything, but going home is what stops the usage clock (same
@@ -175,8 +177,10 @@ class BlockerService : Service() {
             sessionStart = now
             if (Storage.usedMsInWindow(this@BlockerService, pkg, rule.windowMin) >= rule.allowMin * 60_000L) {
                 currentPkg = null
+                hideTimer()
                 block(pkg, rule)
             } else {
+                showTimer(pkg, rule)
                 maybeWarn(pkg, rule)
                 handler.postDelayed(this, tickMs)
             }
@@ -200,10 +204,60 @@ class BlockerService : Service() {
             hideOverlay()
             currentPkg = pkg
             sessionStart = System.currentTimeMillis()
+            showTimer(pkg, rule)
             // Warn right away if earlier sessions already put usage past a threshold.
             maybeWarn(pkg, rule)
             handler.postDelayed(tick, tickMs)
         }
+    }
+
+    /**
+     * The status-bar countdown of what's left of this app's allowance, like
+     * the Clock app's timer. The system ticks the chronometer itself, so this
+     * is only (re)posted when the deadline actually moves: at session start,
+     * and whenever old usage ages out of the rolling window and gives time
+     * back. Tapping it opens AppBlock (which also stops the clock, since the
+     * tracked app leaves the foreground).
+     *
+     * On Android 16 QPR1+ it asks to be a "Live Update": the system then
+     * shows it as a status-bar chip with the countdown ticking in it, and OEM
+     * skins put it in their capsule (OxygenOS "Live Alerts"). Older versions
+     * ignore the request and just show the notification. Requirements met
+     * here: ongoing, has a title, plain style, channel above MIN importance,
+     * and no short-text override so the chip shows the chronometer.
+     */
+    private fun showTimer(pkg: String, rule: Rule) {
+        val remaining = Storage.remainingMs(Storage.usedMsInWindow(this, pkg, rule.windowMin), rule.allowMin)
+        val deadline = System.currentTimeMillis() + remaining
+        if (!Storage.timerNeedsRepost(timerDeadline, deadline)) return
+        timerDeadline = deadline
+        val nm = getSystemService(NotificationManager::class.java)
+        // LOW: icon in the status bar, no sound or heads-up.
+        nm.createNotificationChannel(NotificationChannel(
+            CHANNEL_TIMER, "Session timer", NotificationManager.IMPORTANCE_LOW))
+        val open = PendingIntent.getActivity(this, 0,
+            Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        nm.notify(NOTIF_TIMER, Notification.Builder(this, CHANNEL_TIMER)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setContentTitle("${labelFor(pkg)}: time left")
+            .setContentText("Allowance for the next ${rule.windowMin} min window.")
+            .setWhen(deadline)
+            .setShowWhen(true)
+            .setUsesChronometer(true)
+            .setChronometerCountDown(true)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(open)
+            // Notification.Builder.setRequestPromotedOngoing(true), spelled
+            // as the extra it sets so we needn't compile against SDK 36.1.
+            .addExtras(Bundle().apply { putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true) })
+            .build())
+    }
+
+    private fun hideTimer() {
+        if (timerDeadline == null) return
+        timerDeadline = null
+        getSystemService(NotificationManager::class.java).cancel(NOTIF_TIMER)
     }
 
     /**
@@ -248,6 +302,7 @@ class BlockerService : Service() {
     /** Foreground moved elsewhere: log the finished session, stop ticking. */
     private fun endSession() {
         handler.removeCallbacks(tick)
+        hideTimer()
         val pkg = currentPkg ?: return
         currentPkg = null
         val rule = Storage.loadRules(this)[pkg] ?: return
@@ -334,7 +389,11 @@ class BlockerService : Service() {
         private const val EXTRA_PKG = "pkg"
         private const val CHANNEL_USAGE = "usage_hi"
         private const val CHANNEL_SERVICE = "service"
+        private const val CHANNEL_TIMER = "timer"
         private const val NOTIF_SERVICE = 1
+        private const val NOTIF_TIMER = 2
+        // Notification.EXTRA_REQUEST_PROMOTED_ONGOING (API 36.1)
+        private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
 
         /**
          * (Re)start the blocker. Safe to call repeatedly — a running service

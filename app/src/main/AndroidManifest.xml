@@ -5,6 +5,12 @@
     <!-- Heads-up notifications at 50%/90% of an app's usage allowance -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Android 16 QPR1+: lets the session countdown be a "Live Update"
+         (status-bar chip + lock-screen capsule; OxygenOS calls them Live
+         Alerts). Granted on install; the user can turn it off under
+         Settings > Notifications > Live updates. Ignored on older versions. -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+
     <!-- Lets us show the system "ignore battery optimizations?" dialog, so
          aggressive OEM battery savers (OxygenOS etc.) don't kill the blocker -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />

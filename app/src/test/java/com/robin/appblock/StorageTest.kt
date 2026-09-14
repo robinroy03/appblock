@@ -166,6 +166,28 @@ class StorageTest {
         assertFalse(one.contains("Display over other apps"))
     }
 
+    @Test
+    fun `remaining - allowance minus use, floored at zero`() {
+        assertEquals(5.min, Storage.remainingMs(0L, 5))
+        assertEquals(2.min, Storage.remainingMs(3.min, 5))
+        assertEquals(0L, Storage.remainingMs(5.min, 5))
+        assertEquals(0L, Storage.remainingMs(9.min, 5))       // overshoot
+        assertEquals(0L, Storage.remainingMs(0L, 0))
+    }
+
+    @Test
+    fun `session timer - reposts for a real move, not for jitter`() {
+        // Nothing shown yet -> post.
+        assertTrue(Storage.timerNeedsRepost(null, now))
+        // Same deadline, or a few ms of tick jitter -> leave it alone.
+        assertFalse(Storage.timerNeedsRepost(now, now))
+        assertFalse(Storage.timerNeedsRepost(now, now + 999))
+        assertFalse(Storage.timerNeedsRepost(now, now - 999))
+        // Old usage aged out of the window and handed a minute back -> repost.
+        assertTrue(Storage.timerNeedsRepost(now, now + 1.min))
+        assertTrue(Storage.timerNeedsRepost(now, now - 1_000))
+    }
+
     // ---- foreground app from the usage-event log ----
 
     private fun resumed(pkg: String) = Storage.UsageEvent(resumed = true, pkg = pkg)

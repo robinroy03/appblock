@@ -41,6 +41,20 @@ object Storage {
     /** Whole minutes for display, any partial minute rounding up. */
     fun ceilMin(ms: Long): Long = (ms + 59_999) / 60_000
 
+    /** Allowance left right now, never negative. */
+    fun remainingMs(usedMs: Long, allowMin: Int): Long =
+        maxOf(0L, allowMin * 60_000L - usedMs)
+
+    /**
+     * Whether the session-timer notification needs re-posting for a freshly
+     * computed deadline. The deadline is recomputed every tick and jitters by
+     * a few ms; it only truly moves when old usage ages out of the rolling
+     * window and hands time back. Re-posting for jitter would make the
+     * countdown flicker.
+     */
+    fun timerNeedsRepost(shownDeadline: Long?, deadline: Long): Boolean =
+        shownDeadline == null || Math.abs(deadline - shownDeadline) >= 1_000
+
     /** One "activity resumed"/"activity paused" entry from the system usage-event log. */
     data class UsageEvent(val resumed: Boolean, val pkg: String)
 
