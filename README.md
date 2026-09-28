@@ -15,6 +15,8 @@ No accessibility service either: the blocker needs only "Usage access" (to see
 which app is in front) and "Display over other apps" (to draw the wall), plus a
 battery exemption so the phone doesn't put it to sleep. It runs as a foreground
 service, so a small "AppBlock is on duty" line sits in your notification shade.
+While you're in a limited app, that same line turns into the app's countdown
+(and its 50%/90% warnings), so AppBlock never shows more than one notification.
 
 ## Tie yourself to the mast
 

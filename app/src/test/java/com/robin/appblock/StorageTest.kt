@@ -132,20 +132,6 @@ class StorageTest {
     }
 
     @Test
-    fun `warning tap - goes home only while that app is in the foreground`() {
-        val insta = "com.instagram.android"
-        // Still scrolling the app the warning is about -> background it.
-        assertEquals(true, Storage.tapGoesHome(insta, insta))
-        // Already moved on to something else -> the tap just dismisses.
-        assertEquals(false, Storage.tapGoesHome(insta, "com.android.chrome"))
-        // Nothing tracked (home screen, or the app got blocked) -> do nothing.
-        assertEquals(false, Storage.tapGoesHome(insta, null))
-        // Malformed intent with no package extra -> never acts.
-        assertEquals(false, Storage.tapGoesHome(null, insta))
-        assertEquals(false, Storage.tapGoesHome(null, null))
-    }
-
-    @Test
     fun `block-an-app guard - one popup naming every missing requirement`() {
         // All missing: each requirement contributes its own named segment,
         // in declaration order (= fix-first priority: see the app, then
@@ -178,14 +164,23 @@ class StorageTest {
     @Test
     fun `session timer - reposts for a real move, not for jitter`() {
         // Nothing shown yet -> post.
-        assertTrue(Storage.timerNeedsRepost(null, now))
+        assertTrue(Storage.timerNeedsRepost(null, now, 0, 0))
         // Same deadline, or a few ms of tick jitter -> leave it alone.
-        assertFalse(Storage.timerNeedsRepost(now, now))
-        assertFalse(Storage.timerNeedsRepost(now, now + 999))
-        assertFalse(Storage.timerNeedsRepost(now, now - 999))
+        assertFalse(Storage.timerNeedsRepost(now, now, 0, 0))
+        assertFalse(Storage.timerNeedsRepost(now, now + 999, 50, 50))
+        assertFalse(Storage.timerNeedsRepost(now, now - 999, 0, 0))
         // Old usage aged out of the window and handed a minute back -> repost.
-        assertTrue(Storage.timerNeedsRepost(now, now + 1.min))
-        assertTrue(Storage.timerNeedsRepost(now, now - 1_000))
+        assertTrue(Storage.timerNeedsRepost(now, now + 1.min, 0, 0))
+        assertTrue(Storage.timerNeedsRepost(now, now - 1_000, 0, 0))
+    }
+
+    @Test
+    fun `session timer - reposts when a warning threshold is crossed either way`() {
+        // Usage climbed past 50%, then 90% -> the text gains the warning.
+        assertTrue(Storage.timerNeedsRepost(now, now, 0, 50))
+        assertTrue(Storage.timerNeedsRepost(now, now, 50, 90))
+        // Old usage aged out and dropped it back below 50% -> warning goes.
+        assertTrue(Storage.timerNeedsRepost(now, now + 1.min, 50, 0))
     }
 
     // ---- foreground app from the usage-event log ----

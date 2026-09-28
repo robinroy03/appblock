@@ -47,13 +47,14 @@ object Storage {
 
     /**
      * Whether the session-timer notification needs re-posting for a freshly
-     * computed deadline. The deadline is recomputed every tick and jitters by
-     * a few ms; it only truly moves when old usage ages out of the rolling
-     * window and hands time back. Re-posting for jitter would make the
-     * countdown flicker.
+     * computed deadline and warning level. The deadline is recomputed every
+     * tick and jitters by a few ms; it only truly moves when old usage ages
+     * out of the rolling window and hands time back. Re-posting for jitter
+     * would make the countdown flicker. The 50%/90% warnings live in the
+     * timer's text, so crossing a threshold (either way) re-posts too.
      */
-    fun timerNeedsRepost(shownDeadline: Long?, deadline: Long): Boolean =
-        shownDeadline == null || Math.abs(deadline - shownDeadline) >= 1_000
+    fun timerNeedsRepost(shownDeadline: Long?, deadline: Long, shownLevel: Int, level: Int): Boolean =
+        shownDeadline == null || Math.abs(deadline - shownDeadline) >= 1_000 || level != shownLevel
 
     /** One "activity resumed"/"activity paused" entry from the system usage-event log. */
     data class UsageEvent(val resumed: Boolean, val pkg: String)
@@ -122,25 +123,14 @@ object Storage {
 
     /**
      * Highest warning threshold (50/90) that current usage has reached, or 0.
-     * The caller notifies when this rises above the previously stored level and
-     * then stores it; because the stored level follows usage back DOWN as old
-     * intervals age out of the rolling window, each threshold re-notifies on
-     * the next climb past it.
+     * It follows usage back DOWN as old intervals age out of the rolling
+     * window, so the timer's warning text does too.
      */
     fun crossedWarnLevel(usedMs: Long, allowMin: Int): Int {
         if (allowMin <= 0) return 0
         val pct = usedMs * 100 / (allowMin * 60_000L)
         return WARN_THRESHOLDS.lastOrNull { it <= pct } ?: 0
     }
-
-    /**
-     * Whether tapping an app's usage warning should send the user home: only
-     * when that app is still the one in the foreground, so backgrounding it
-     * actually stops the usage clock. Tapped after the user has already moved
-     * on, the notification just dismisses rather than interrupting them.
-     */
-    fun tapGoesHome(notifPkg: String?, foregroundPkg: String?): Boolean =
-        notifPkg != null && notifPkg == foregroundPkg
 
     /**
      * Everything AppBlock can't work without, as data. Each entry carries its
@@ -289,18 +279,6 @@ object Storage {
         val usage = loadUsage(ctx)
         usage.remove(pkg)
         prefs(ctx).edit().putString("usage", usage.toString()).apply()
-        setWarnLevel(ctx, pkg, 0)
-    }
-
-    // Last warning level notified per app: {"com.instagram.android": 50, ...}
-
-    fun warnLevel(ctx: Context, pkg: String): Int =
-        JSONObject(prefs(ctx).getString("notified", "{}")!!).optInt(pkg, 0)
-
-    fun setWarnLevel(ctx: Context, pkg: String, level: Int) {
-        val json = JSONObject(prefs(ctx).getString("notified", "{}")!!)
-        if (level == 0) json.remove(pkg) else json.put(pkg, level)
-        prefs(ctx).edit().putString("notified", json.toString()).apply()
     }
 
     // Convenience wrappers joining persistence with the pure math above.
