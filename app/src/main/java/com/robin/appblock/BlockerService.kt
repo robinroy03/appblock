@@ -36,6 +36,10 @@ import android.widget.TextView
  * in the foreground we also tick every few seconds, so a session gets cut
  * off the moment its budget runs out.
  *
+ * AppBlock only ever shows that one notification: "on duty" while nothing
+ * tracked is in front, swapped for the tracked app's countdown (with the
+ * 50%/90% warnings in its text) while one is.
+ *
  * The block wall is an overlay window drawn by this service directly over
  * the blocked app ("Display over other apps", TYPE_APPLICATION_OVERLAY) —
  * NOT an Activity. Activities launched from a background service get
@@ -59,17 +63,8 @@ class BlockerService : Service() {
     private var overlay: LinearLayout? = null
     private var overlayPkg: String? = null   // which app the wall is covering
     private var timerDeadline: Long? = null  // what the session-timer notification counts down to
-
-    // Tapping a usage warning backgrounds the app it's about. We can't
-    // force-kill anything, but going home is what stops the usage clock (same
-    // as the block wall's button). Tapped from anywhere else the notification
-    // just dismisses, so a stale warning can't yank the user out of whatever
-    // they've since moved on to.
-    private val goHomeReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            if (Storage.tapGoesHome(intent.getStringExtra(EXTRA_PKG), currentPkg)) goHome()
-        }
-    }
+    private var timerLevel = 0               // warning level (0/50/90) its text shows
+    private var shown: Pair<Int, Notification>? = null  // the one notification up right now
 
     // No point polling a dark screen: nothing is being used. The screen-off
     // "paused" event ends the session first, then polling stops.
@@ -87,13 +82,14 @@ class BlockerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        val goHome = IntentFilter(ACTION_GO_HOME)
-        if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(goHomeReceiver, goHome, RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("UnspecifiedRegisterReceiverFlag")
-            registerReceiver(goHomeReceiver, goHome)
-        }
+        // Clear leftovers from before a restart or update (an old countdown,
+        // older versions' per-app warnings): only the notification posted
+        // below should be up.
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.cancelAll()
+        // Warnings used to be their own notifications on these channels.
+        nm.deleteNotificationChannel("usage")
+        nm.deleteNotificationChannel("usage_hi")
         registerReceiver(screenReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
@@ -101,30 +97,52 @@ class BlockerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val nm = getSystemService(NotificationManager::class.java)
-        // MIN importance: no sound, no status-bar icon, just a collapsed line
-        // at the bottom of the shade (Android 13+ lets the user swipe it away).
-        nm.createNotificationChannel(NotificationChannel(
-            CHANNEL_SERVICE, "Blocker running", NotificationManager.IMPORTANCE_MIN))
-        val open = PendingIntent.getActivity(this, 0,
-            Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        val notif = Notification.Builder(this, CHANNEL_SERVICE)
-            .setSmallIcon(android.R.drawable.ic_lock_lock)
-            .setContentTitle("AppBlock is on duty")
-            .setContentText("Watching for apps over their allowance.")
-            .setContentIntent(open)
-            .setOngoing(true)
-            .build()
-        if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(NOTIF_SERVICE, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(NOTIF_SERVICE, notif)
-        }
+        // Mid-session (e.g. a restart request) keep the countdown up.
+        val (id, notif) = shown ?: (NOTIF_SERVICE to onDutyNotification())
+        show(id, notif)
         if (getSystemService(PowerManager::class.java).isInteractive) startPolling()
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun onDutyNotification(): Notification {
+        // MIN importance: no sound, no status-bar icon, just a collapsed line
+        // at the bottom of the shade (Android 13+ lets the user swipe it away).
+        getSystemService(NotificationManager::class.java).createNotificationChannel(
+            NotificationChannel(CHANNEL_SERVICE, "Blocker running", NotificationManager.IMPORTANCE_MIN))
+        return Notification.Builder(this, CHANNEL_SERVICE)
+            .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .setContentTitle("AppBlock is on duty")
+            .setContentText("Watching for apps over their allowance.")
+            .setContentIntent(openApp())
+            .setOngoing(true)
+            .build()
+    }
+
+    private fun openApp() = PendingIntent.getActivity(this, 0,
+        Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+
+    /**
+     * Make `notif` the service's one notification. Re-calling startForeground
+     * with a different id swaps it in and takes the previous one down; the
+     * explicit cancel covers the old one in case the system leaves it behind.
+     * Posting also brings it back if the user had swiped it away.
+     */
+    private fun show(id: Int, notif: Notification) {
+        val previous = shown?.first
+        try {
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(id, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else {
+                startForeground(id, notif)
+            }
+        } catch (e: Exception) { return }  // refused: keep whatever is up rather than crash
+        shown = id to notif
+        if (previous != null && previous != id) {
+            getSystemService(NotificationManager::class.java).cancel(previous)
+        }
+    }
 
     private fun startPolling() {
         if (polling) return
@@ -181,7 +199,6 @@ class BlockerService : Service() {
                 block(pkg, rule)
             } else {
                 showTimer(pkg, rule)
-                maybeWarn(pkg, rule)
                 handler.postDelayed(this, tickMs)
             }
         }
@@ -205,19 +222,19 @@ class BlockerService : Service() {
             currentPkg = pkg
             sessionStart = System.currentTimeMillis()
             showTimer(pkg, rule)
-            // Warn right away if earlier sessions already put usage past a threshold.
-            maybeWarn(pkg, rule)
             handler.postDelayed(tick, tickMs)
         }
     }
 
     /**
      * The status-bar countdown of what's left of this app's allowance, like
-     * the Clock app's timer. The system ticks the chronometer itself, so this
-     * is only (re)posted when the deadline actually moves: at session start,
-     * and whenever old usage ages out of the rolling window and gives time
-     * back. Tapping it opens AppBlock (which also stops the clock, since the
-     * tracked app leaves the foreground).
+     * the Clock app's timer, shown in place of the "on duty" notification.
+     * The system ticks the chronometer itself, so this is only (re)posted
+     * when something actually changes: at session start, whenever old usage
+     * ages out of the rolling window and gives time back, and when usage
+     * crosses 50%/90% (the warning then replaces the text). Tapping it opens
+     * AppBlock, which also stops the clock, since the tracked app leaves the
+     * foreground.
      *
      * On Android 16 QPR1+ it asks to be a "Live Update": the system then
      * shows it as a status-bar chip with the countdown ticking in it, and OEM
@@ -227,72 +244,41 @@ class BlockerService : Service() {
      * and no short-text override so the chip shows the chronometer.
      */
     private fun showTimer(pkg: String, rule: Rule) {
-        val remaining = Storage.remainingMs(Storage.usedMsInWindow(this, pkg, rule.windowMin), rule.allowMin)
-        val deadline = System.currentTimeMillis() + remaining
-        if (!Storage.timerNeedsRepost(timerDeadline, deadline)) return
+        val usedMs = Storage.usedMsInWindow(this, pkg, rule.windowMin)
+        val deadline = System.currentTimeMillis() + Storage.remainingMs(usedMs, rule.allowMin)
+        val level = Storage.crossedWarnLevel(usedMs, rule.allowMin)
+        if (!Storage.timerNeedsRepost(timerDeadline, deadline, timerLevel, level)) return
         timerDeadline = deadline
-        val nm = getSystemService(NotificationManager::class.java)
+        timerLevel = level
         // LOW: icon in the status bar, no sound or heads-up.
-        nm.createNotificationChannel(NotificationChannel(
-            CHANNEL_TIMER, "Session timer", NotificationManager.IMPORTANCE_LOW))
-        val open = PendingIntent.getActivity(this, 0,
-            Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        nm.notify(NOTIF_TIMER, Notification.Builder(this, CHANNEL_TIMER)
+        getSystemService(NotificationManager::class.java).createNotificationChannel(
+            NotificationChannel(CHANNEL_TIMER, "Session timer", NotificationManager.IMPORTANCE_LOW))
+        val text = if (level == 0) "Allowance for the next ${rule.windowMin} min window."
+            else "You've used ${Storage.usedPct(usedMs, rule.allowMin)}% " +
+                "(${Storage.fmtMin(usedMs)} min) of your usage for ${labelFor(pkg)}"
+        show(NOTIF_TIMER, Notification.Builder(this, CHANNEL_TIMER)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setContentTitle("${labelFor(pkg)}: time left")
-            .setContentText("Allowance for the next ${rule.windowMin} min window.")
+            .setContentText(text)
             .setWhen(deadline)
             .setShowWhen(true)
             .setUsesChronometer(true)
             .setChronometerCountDown(true)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setContentIntent(open)
+            .setContentIntent(openApp())
             // Notification.Builder.setRequestPromotedOngoing(true), spelled
             // as the extra it sets so we needn't compile against SDK 36.1.
             .addExtras(Bundle().apply { putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true) })
             .build())
     }
 
+    /** Session over: back to the plain "on duty" notification. */
     private fun hideTimer() {
         if (timerDeadline == null) return
         timerDeadline = null
-        getSystemService(NotificationManager::class.java).cancel(NOTIF_TIMER)
-    }
-
-    /**
-     * Post the 50%/90% usage warnings, once per climb past each threshold.
-     * The stored level tracks usage back down as the rolling window forgets
-     * old sessions, so each threshold fires again on the next climb.
-     */
-    private fun maybeWarn(pkg: String, rule: Rule) {
-        val usedMs = Storage.usedMsInWindow(this, pkg, rule.windowMin)
-        val level = Storage.crossedWarnLevel(usedMs, rule.allowMin)
-        val last = Storage.warnLevel(this, pkg)
-        if (level > last) {
-            val pct = Storage.usedPct(usedMs, rule.allowMin)
-            val min = Storage.fmtMin(usedMs)
-            val nm = getSystemService(NotificationManager::class.java)
-            // HIGH importance so the warning pops up over the app it's about.
-            // Channel importance is locked in at creation, so this is a fresh
-            // channel id ("usage" shipped as DEFAULT); drop the old one.
-            nm.deleteNotificationChannel("usage")
-            nm.createNotificationChannel(NotificationChannel(
-                CHANNEL_USAGE, "Usage warnings", NotificationManager.IMPORTANCE_HIGH))
-            // One PendingIntent per app: distinct request codes keep each
-            // notification's package extra its own.
-            val goHome = PendingIntent.getBroadcast(this, pkg.hashCode(),
-                Intent(ACTION_GO_HOME).setPackage(packageName).putExtra(EXTRA_PKG, pkg),
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-            nm.notify(pkg.hashCode(), Notification.Builder(this, CHANNEL_USAGE)
-                .setSmallIcon(android.R.drawable.ic_lock_lock)
-                .setContentTitle("AppBlock")
-                .setContentText("You've used $pct% ($min min) of your usage for ${labelFor(pkg)}")
-                .setAutoCancel(true)
-                .setContentIntent(goHome)
-                .build())
-        }
-        if (level != last) Storage.setWarnLevel(this, pkg, level)
+        timerLevel = 0
+        show(NOTIF_SERVICE, onDutyNotification())
     }
 
     private fun labelFor(pkg: String) = try {
@@ -312,7 +298,7 @@ class BlockerService : Service() {
     /**
      * Send the user to the launcher. Launching from a service is normally
      * refused on Android 10+, but an app holding "Display over other apps"
-     * with a visible overlay is exempt, and so is a notification tap.
+     * with a visible overlay is exempt.
      */
     private fun goHome() {
         try {
@@ -377,17 +363,14 @@ class BlockerService : Service() {
     }
 
     override fun onDestroy() {
+        timerDeadline = null  // going away: don't swap notifications back in on the way out
         hideOverlay()
         stopPolling()
-        try { unregisterReceiver(goHomeReceiver) } catch (e: Exception) {}
         try { unregisterReceiver(screenReceiver) } catch (e: Exception) {}
         super.onDestroy()
     }
 
     companion object {
-        private const val ACTION_GO_HOME = "com.robin.appblock.action.GO_HOME"
-        private const val EXTRA_PKG = "pkg"
-        private const val CHANNEL_USAGE = "usage_hi"
         private const val CHANNEL_SERVICE = "service"
         private const val CHANNEL_TIMER = "timer"
         private const val NOTIF_SERVICE = 1
