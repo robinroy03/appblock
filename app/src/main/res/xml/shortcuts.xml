@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press launcher shortcuts. Placeholder for now: "Don't give up!"
+     catches the moment someone long-presses AppBlock to uninstall it. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="dont_give_up"
+        android:enabled="true"
+        android:icon="@android:drawable/btn_star_big_on"
+        android:shortcutShortLabel="@string/shortcut_dont_give_up">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.robin.appblock"
+            android:targetClass="com.robin.appblock.DontGiveUpActivity" />
+    </shortcut>
+</shortcuts>
