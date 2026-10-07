@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Static shortcut labels must be string resources -->
+    <string name="shortcut_dont_give_up">Don\'t give up!</string>
+</resources>

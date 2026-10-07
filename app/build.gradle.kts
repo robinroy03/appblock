@@ -52,3 +52,10 @@ android {
 dependencies {
     testImplementation("junit:junit:4.13.2")
 }
+
+// ShortcutsTest reads these files straight from disk; declare them so an edit
+// to them re-runs the tests instead of leaving the task UP-TO-DATE.
+tasks.withType<Test>().configureEach {
+    inputs.file("src/main/AndroidManifest.xml")
+    inputs.dir("src/main/res/xml")
+}
