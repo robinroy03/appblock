@@ -61,7 +61,6 @@ enough to check in, never enough to drown.
   open its UI.
 - The budget clock only ticks while the app is **on screen**. Background use
   costs nothing.
-
 - **Incoming calls in blocked apps** (WhatsApp/Telegram): the ring notification
   appears, but the full-screen incoming-call UI is the app's window. Answering
   while the app is over budget will likely get bounced. Think twice before
