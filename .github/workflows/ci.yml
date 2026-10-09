@@ -1,8 +1,25 @@
 name: CI
 
+# Docs-only changes (README, screenshots, licence, issue templates) can't
+# break the app, so they don't run CI at all.
 on:
   push:
+    paths-ignore:
+      - "**.md"
+      - "public/**"
+      - "LICENSE"
+      - ".github/ISSUE_TEMPLATE/**"
   pull_request:
+    paths-ignore:
+      - "**.md"
+      - "public/**"
+      - "LICENSE"
+      - ".github/ISSUE_TEMPLATE/**"
+
+# A newer push to the same branch cancels the run it makes outdated.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -13,6 +30,8 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      # Caches Gradle and its downloads between runs (like caching node_modules).
+      - uses: gradle/actions/setup-gradle@v4
       # Runs the unit tests and makes sure the APK still compiles.
       - run: ./gradlew test assembleDebug
 
@@ -27,6 +46,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
       # Hardware acceleration: GitHub's Linux runners support KVM, but the
       # runner user needs access to the device.
       - name: Enable KVM
