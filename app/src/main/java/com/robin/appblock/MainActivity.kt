@@ -3,30 +3,31 @@ package com.robin.appblock
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.NotificationManager
+import android.app.usage.UsageStatsManager
+import android.content.Context
 import android.content.Intent
-import android.content.res.Configuration
 import android.graphics.drawable.Drawable
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.provider.Settings
 import android.text.Html
-import android.text.InputType
 import android.text.method.LinkMovementMethod
+import android.util.TypedValue
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
-import android.view.inputmethod.InputMethodManager
 import android.widget.Button
-import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.NumberPicker
 import android.widget.ScrollView
 import android.widget.TextView
+import java.util.Calendar
 
 /**
- * Home screen: the list of currently blocked apps, each with editable
- * "allow X min per Y min" fields (auto-saved when you leave the screen),
+ * Home screen: the list of currently blocked apps, each showing today's
+ * screen time and its limit, with an hourglass that opens the limit wheels,
  * plus a button to pick more apps to block.
  */
 class MainActivity : Activity() {
@@ -36,8 +37,6 @@ class MainActivity : Activity() {
     private val reqViews = mutableMapOf<Storage.Requirement, List<View>>()
     private lateinit var notifReminder: LinearLayout
     private lateinit var list: LinearLayout
-    // package name -> (allow field, window field)
-    private val rows = mutableMapOf<String, Pair<EditText, EditText>>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,7 +77,6 @@ class MainActivity : Activity() {
                         .show()
                     return@setOnClickListener
                 }
-                save()
                 startActivity(Intent(this@MainActivity, AppPickerActivity::class.java))
             }
         }
@@ -101,8 +99,6 @@ class MainActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(32, 32, 32, 32)
-            // Absorbs focus when a budget field's cursor is dismissed via ✓.
-            isFocusableInTouchMode = true
             for (views in reqViews.values) for (v in views) addView(v)
             addView(notifReminder, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -297,15 +293,12 @@ class MainActivity : Activity() {
             .show()
     }
 
-    override fun onPause() {
-        super.onPause()
-        save()
-    }
-
-    /** One card per blocked app: [icon] Label [✕] / allow [5] min per [120] min. */
+    /**
+     * One row per blocked app, laid out like Digital Wellbeing's list:
+     * [icon] Label / today's screen time / its limit  |  [hourglass].
+     */
     private fun rebuild() {
         list.removeAllViews()
-        rows.clear()
         val rules = Storage.loadRules(this)
 
         // While a required setting is off the app cards hide (they'd promise
@@ -332,95 +325,139 @@ class MainActivity : Activity() {
             Storage.HomeList.CARDS -> {}
         }
         val entries = rules.entries.sortedBy { labelFor(it.key).lowercase() }
+        val today = todayUsageMs()
 
-        val iconPx = (40 * resources.displayMetrics.density).toInt()
         for ((pkg, rule) in entries) {
-            val allow = numberField(rule.allowMin)
-            val window = numberField(rule.windowMin)
-            rows[pkg] = allow to window
-
-            // Small pill right after the name showing budget already spent.
             val usedMs = Storage.usedMs(
                 Storage.loadIntervals(this, pkg), rule.windowMin, System.currentTimeMillis())
             val usedMin = Storage.displayedUsedMin(usedMs, rule.allowMin)
-            val usedBubble = TextView(this).apply {
-                text = "$usedMin/${rule.allowMin} min used"
-                textSize = 12f
-                setPadding(20, 8, 20, 8)
-                val night = (resources.configuration.uiMode and
-                    Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-                background = GradientDrawable().apply {
-                    cornerRadius = 40f
-                    setColor(if (night) 0xFF3A3A3A.toInt() else 0xFFE0E0E0.toInt())
-                }
+            val label = TextView(this).apply {
+                text = labelFor(pkg)
+                textSize = 18f
+                maxLines = 1
             }
-
-            val titleLine = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                addView(ImageView(context).apply { setImageDrawable(iconFor(pkg)) },
-                    LinearLayout.LayoutParams(iconPx, iconPx))
+            val text = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16), 0, dp(12), 0)
+                addView(label)
                 addView(TextView(context).apply {
-                    text = labelFor(pkg)
-                    textSize = 18f
-                    maxLines = 1
-                    setPadding(24, 0, 16, 0)
+                    text = Storage.fmtToday(today[pkg] ?: 0L)
+                    textSize = 14f
+                    alpha = 0.7f
                 })
-                addView(usedBubble)
-                addView(View(context),
-                    LinearLayout.LayoutParams(0, 0, 1f))   // spacer pushes ✕ to the edge
-                addView(Button(context).apply {
-                    text = "✕"
-                    setOnClickListener { removeApp(pkg) }
+                addView(TextView(context).apply {
+                    text = "${Storage.fmtSpan(rule.allowMin)} in any " +
+                        "${Storage.fmtSpan(rule.windowMin)} · $usedMin min used"
+                    textSize = 14f
+                    alpha = 0.7f
                 })
-            }
-            // ✓ appears while either budget field is being edited; tapping it
-            // saves, hides the keyboard, and drops the cursor.
-            val confirm = Button(this).apply {
-                text = "✓"
-                visibility = View.GONE
-                setOnClickListener {
-                    save()
-                    (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
-                        .hideSoftInputFromWindow(it.windowToken, 0)
-                    // Rebuild so the "X/Y min used" pill reflects the new budget.
-                    rebuild()
-                }
-            }
-            val focusWatcher = View.OnFocusChangeListener { _, _ ->
-                confirm.visibility =
-                    if (allow.isFocused || window.isFocused) View.VISIBLE else View.GONE
-            }
-            allow.onFocusChangeListener = focusWatcher
-            window.onFocusChangeListener = focusWatcher
-
-            val budgetLine = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                addView(TextView(context).apply { text = "allow" })
-                addView(allow)
-                addView(TextView(context).apply { text = "min per" })
-                addView(window)
-                addView(TextView(context).apply { text = "min" })
-                addView(confirm)
             }
             list.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(0, 24, 0, 0)
-                addView(titleLine)
-                addView(budgetLine)
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(14), 0, dp(14))
+                addView(ImageView(context).apply { setImageDrawable(iconFor(pkg)) },
+                    LinearLayout.LayoutParams(dp(44), dp(44)))
+                addView(text, LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                // Thin divider setting the limit button apart, as in the
+                // system's own screen-time list.
+                addView(View(context).apply {
+                    setBackgroundColor(label.currentTextColor)
+                    alpha = 0.25f
+                }, LinearLayout.LayoutParams(dp(1), dp(40)))
+                addView(ImageView(context).apply {
+                    setImageResource(R.drawable.ic_hourglass)
+                    contentDescription = "Set limit for ${labelFor(pkg)}"
+                    setPadding(dp(12), dp(12), dp(12), dp(12))
+                    background = getDrawable(TypedValue().also {
+                        theme.resolveAttribute(
+                            android.R.attr.selectableItemBackgroundBorderless, it, true)
+                    }.resourceId)
+                    setOnClickListener { showLimitDialog(pkg, rule) }
+                }, LinearLayout.LayoutParams(dp(48), dp(48)).apply { leftMargin = dp(12) })
             })
         }
     }
 
-    // Confirmation guards against accidental taps on the ✕ button.
+    /**
+     * Two scroll wheels, the allowance and the rolling window it's measured
+     * over, each ticking the vibration motor as it turns. OK saves straight
+     * away; Remove (the old ✕) lives here too.
+     */
+    private fun showLimitDialog(pkg: String, rule: Rule) {
+        val name = labelFor(pkg)
+        val message = TextView(this).apply {
+            textSize = 16f
+            setPadding(dp(24), dp(8), dp(24), dp(8))
+        }
+        fun wheel(standard: List<Int>, current: Int): Pair<NumberPicker, List<Int>> {
+            val values = Storage.wheelChoices(standard, current)
+            return NumberPicker(this).apply {
+                minValue = 0
+                maxValue = values.size - 1
+                displayedValues = values.map(Storage::fmtSpan).toTypedArray()
+                value = values.indexOf(current)
+                wrapSelectorWheel = false
+                // Wheel only: no tap-to-type keyboard on the selected value.
+                descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
+            } to values
+        }
+        val (allow, allowValues) = wheel(Storage.ALLOW_CHOICES, rule.allowMin)
+        val (window, windowValues) = wheel(Storage.WINDOW_CHOICES, rule.windowMin)
+        fun picked() = Rule(allowValues[allow.value], windowValues[window.value])
+        fun describe() {
+            val r = picked()
+            message.text = "$name gets ${Storage.fmtSpan(r.allowMin)} in any " +
+                "${Storage.fmtSpan(r.windowMin)}. Time comes back as old use " +
+                "rolls out of the window, so there's no midnight reset."
+        }
+        describe()
+        for (p in listOf(allow, window)) {
+            p.setOnValueChangedListener { picker, _, _ ->
+                picker.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                describe()
+            }
+        }
+        fun column(heading: String, picker: NumberPicker) = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(16), 0, dp(16), 0)
+            addView(TextView(context).apply { text = heading; alpha = 0.7f })
+            addView(picker)
+        }
+        AlertDialog.Builder(this)
+            .setIcon(iconFor(pkg))
+            .setTitle("Set limit")
+            .setView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(message)
+                addView(LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER
+                    setPadding(0, dp(8), 0, 0)
+                    addView(column("Allow", allow))
+                    addView(column("in any", window))
+                })
+            })
+            .setPositiveButton("OK") { _, _ ->
+                val rules = Storage.loadRules(this).toMutableMap()
+                rules[pkg] = picked()
+                Storage.saveRules(this, rules)
+                rebuild()
+            }
+            .setNegativeButton("Cancel", null)
+            .setNeutralButton("Remove") { _, _ -> removeApp(pkg) }
+            .show()
+    }
+
+    // Confirmation guards against accidental taps on Remove.
     private fun removeApp(pkg: String) {
         AlertDialog.Builder(this)
             .setIcon(iconFor(pkg))
             .setTitle("Remove ${labelFor(pkg)}?")
             .setMessage("Are you sure you want to remove the limits for this app?")
             .setPositiveButton("Yes") { _, _ ->
-                save()
                 Storage.removeApp(this, pkg)
                 rebuild()
             }
@@ -428,27 +465,18 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun save() {
-        // No rows means the list wasn't built (blocking paused):
-        // saving would rewrite the rules blob as empty and wipe every app.
-        if (rows.isEmpty()) return
-        val old = Storage.loadRules(this)
-        val rules = mutableMapOf<String, Rule>()
-        for ((pkg, fields) in rows) {
-            // A field left empty keeps its previous value.
-            val allowMin = fields.first.text.toString().toIntOrNull() ?: old[pkg]?.allowMin ?: 5
-            val windowMin = fields.second.text.toString().toIntOrNull() ?: old[pkg]?.windowMin ?: 120
-            rules[pkg] = Rule(allowMin, windowMin)
-        }
-        Storage.saveRules(this, rules)
+    /** Screen time per package since midnight (needs Usage access, which the cards do too). */
+    private fun todayUsageMs(): Map<String, Long> {
+        val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val midnight = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        return usm.queryAndAggregateUsageStats(midnight, System.currentTimeMillis())
+            .mapValues { it.value.totalTimeInForeground }
     }
 
-    private fun numberField(value: Int) = EditText(this).apply {
-        inputType = InputType.TYPE_CLASS_NUMBER
-        setText(value.toString())
-        minEms = 3
-        gravity = Gravity.CENTER
-    }
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     private fun labelFor(pkg: String) = try {
         packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()

@@ -78,19 +78,19 @@ class StorageTest {
     }
 
     @Test
-    fun `used pill - zero use shows zero`() {
+    fun `minutes used - zero use shows zero`() {
         assertEquals(0L, Storage.displayedUsedMin(0, 5))
     }
 
     @Test
-    fun `used pill - partial minutes round up`() {
+    fun `minutes used - partial minutes round up`() {
         assertEquals(1L, Storage.displayedUsedMin(1_000, 5))       // 1s -> "1"
         assertEquals(1L, Storage.displayedUsedMin(60_000, 5))      // exactly 1 min
         assertEquals(2L, Storage.displayedUsedMin(60_001, 5))      // just over 1 min
     }
 
     @Test
-    fun `used pill - display capped at the allowance`() {
+    fun `minutes used - display capped at the allowance`() {
         assertEquals(5L, Storage.displayedUsedMin(9.min, 5))       // overshoot -> "5/5"
     }
 
@@ -245,6 +245,36 @@ class StorageTest {
         assertEquals("1h", Storage.fmtDuration(60.min))
         assertEquals("1h 1m", Storage.fmtDuration(61.min))
         assertEquals("2h 12m", Storage.fmtDuration(132.min + 30_000))
+    }
+
+    @Test
+    fun `rule spans - minutes, one hour, hours, mixed`() {
+        assertEquals("5 min", Storage.fmtSpan(5))
+        assertEquals("45 min", Storage.fmtSpan(45))
+        assertEquals("1 hr", Storage.fmtSpan(60))
+        assertEquals("1 hr 30 min", Storage.fmtSpan(90))
+        assertEquals("2 hrs", Storage.fmtSpan(120))
+        assertEquals("2 hrs 5 min", Storage.fmtSpan(125))
+        assertEquals("24 hrs", Storage.fmtSpan(1440))
+    }
+
+    @Test
+    fun `today's screen time - unused, under a minute, then whole minutes`() {
+        assertEquals("Not used today", Storage.fmtToday(0))
+        assertEquals("Less than a minute today", Storage.fmtToday(59_999))
+        assertEquals("1 min today", Storage.fmtToday(60_000))
+        assertEquals("1 hr 7 min today", Storage.fmtToday(67.min + 59_000))   // truncates
+    }
+
+    @Test
+    fun `wheel choices - a standard value keeps the standard stops`() {
+        assertEquals(Storage.ALLOW_CHOICES, Storage.wheelChoices(Storage.ALLOW_CHOICES, 5))
+    }
+
+    @Test
+    fun `wheel choices - an odd old value is slotted in order`() {
+        assertEquals(listOf(1, 5, 7, 10), Storage.wheelChoices(listOf(1, 5, 10), 7))
+        assertEquals(listOf(15, 30, 2000), Storage.wheelChoices(listOf(15, 30), 2000))
     }
 
     @Test

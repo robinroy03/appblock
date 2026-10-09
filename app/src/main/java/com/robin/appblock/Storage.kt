@@ -187,8 +187,40 @@ object Storage {
         missing.joinToString("\n\n") { "${it.title}: ${it.why}" } +
             "\n\nThe buttons on the home screen will get you set up."
 
+    /** A rule's spans in words, for the home list and the limit wheels: "45 min", "1 hr", "2 hrs", "1 hr 30 min". */
+    fun fmtSpan(min: Int): String {
+        val h = min / 60
+        val m = min % 60
+        val hrs = if (h == 1) "1 hr" else "$h hrs"
+        return when {
+            h == 0 -> "$m min"
+            m == 0 -> hrs
+            else -> "$hrs $m min"
+        }
+    }
+
+    /** Today's screen time under an app's name on the home list. */
+    fun fmtToday(ms: Long): String = when {
+        ms == 0L -> "Not used today"
+        ms < 60_000 -> "Less than a minute today"
+        else -> fmtSpan((ms / 60_000).toInt()) + " today"
+    }
+
+    // Stops on the limit dialog's two wheels: the allowance, and the rolling
+    // window it's measured over.
+    val ALLOW_CHOICES = listOf(1, 2, 3, 4, 5, 10, 15, 20, 30, 45, 60)
+    val WINDOW_CHOICES = listOf(15, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720, 1440)
+
     /**
-     * Minutes to show in the "X/Y min used" pill: partial minutes round up
+     * A wheel's stops: the standard choices, plus `current` slotted in order
+     * when it isn't one of them (budgets typed in before the wheels existed),
+     * so opening the dialog never silently changes a rule.
+     */
+    fun wheelChoices(standard: List<Int>, current: Int): List<Int> =
+        if (current in standard) standard else (standard + current).sorted()
+
+    /**
+     * Minutes to show as "N min used" on a home-list card: partial minutes round up
      * (any use shows at least 1), capped at the allowance so slight overshoot
      * never displays as "6/5".
      */
