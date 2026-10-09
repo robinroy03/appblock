@@ -26,6 +26,7 @@ Build:
 ```sh
 ./gradlew assembleDebug          # APK at app/build/outputs/apk/debug/app-debug.apk
 ./gradlew testDebugUnitTest      # JUnit tests (also run by the pre-commit hook)
+scripts/e2e.sh                   # end-to-end tests on the emulator (also in CI)
 ```
 
 ## Build → phone loop (phone connected over USB)
@@ -68,5 +69,10 @@ phone; set `ANDROID_SERIAL=emulator-5554` to point one at the emulator.
 
 - Decision logic goes in `Storage.kt` as pure functions with JUnit tests in
   `app/src/test/` — every feature. UI stays in the Activities/Service.
+- User-visible flows get an end-to-end test in `app/src/androidTest/`:
+  UI Automator driving the real app (and the apps it blocks) on the
+  emulator. `E2e.freshState()` resets the app before each test, and
+  `seedUsage()` starts a test partway into a budget instead of waiting.
+  Wheel steps use shell taps (`device.click` is too long a press for them).
 - No build artifacts are committed: `*.apk`, `build/`, and `local.properties`
   are gitignored. Keep it that way.

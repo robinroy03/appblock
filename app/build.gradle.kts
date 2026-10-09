@@ -22,6 +22,8 @@ android {
         targetSdk = 34
         versionCode = 7
         versionName = "0.7.0"
+        // e2e tests (app/src/androidTest) drive the real app on a device.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     if (!keystoreProps.isEmpty) {
@@ -51,6 +53,11 @@ android {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    // e2e: UI Automator finds and taps things on screen across apps (the
+    // block wall is drawn over another app), like Playwright for Android.
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
 }
 
 // ShortcutsTest reads these files straight from disk; declare them so an edit
