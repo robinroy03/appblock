@@ -1,9 +1,12 @@
 name: CI
 
-# Docs-only changes (README, screenshots, licence, issue templates) can't
-# break the app, so they don't run CI at all.
+# Branch pushes only: a bare `push:` also fires on tags, so publishing a
+# release re-ran CI on a commit that had already passed. Docs-only changes
+# (README, screenshots, licence, issue templates) can't break the app, so
+# they don't run CI at all.
 on:
   push:
+    branches: ["**"]
     paths-ignore:
       - "**.md"
       - "public/**"
