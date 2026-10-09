@@ -4,6 +4,9 @@ local.properties
 .DS_Store
 *.apk
 
+# The test emulator's virtual device (scripts/emulator.sh)
+.avd/
+
 # Release signing secrets — never commit these
 *.jks
 keystore.properties

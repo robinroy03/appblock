@@ -49,6 +49,21 @@ To verify a change, open AppBlock on the phone; the permission grants and
 blocked-app rules survive an `-r` reinstall, and the blocker service restarts
 itself after the update, so no re-setup is needed.
 
+## Emulator loop (no phone needed)
+
+```sh
+scripts/emulator.sh            # boot (creating it on first run), install, grant settings
+scripts/emulator.sh --window   # same, with the emulator window visible
+```
+
+An Android 14 emulator (a Pixel 7, like the test phone's screen) whose
+virtual device lives in `.avd/` (gitignored). It installs the current debug
+build and grants usage access, display-over-apps, the battery exemption and
+notifications via adb, so the home list is live straight away. Prefer it for
+checking UI changes; use the phone for what the emulator can't tell you
+(haptics, OxygenOS behaviour). With both connected, the scripts target the
+phone; set `ANDROID_SERIAL=emulator-5554` to point one at the emulator.
+
 ## Conventions
 
 - Decision logic goes in `Storage.kt` as pure functions with JUnit tests in
