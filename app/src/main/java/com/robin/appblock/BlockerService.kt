@@ -161,7 +161,11 @@ class BlockerService : Service() {
     private val poll = object : Runnable {
         override fun run() {
             val now = System.currentTimeMillis()
-            foreground = Storage.foregroundFrom(readEvents(now - lookbackMs, now), foreground)
+            // Usage access revoked while running: the query throws, and with
+            // nothing to see there's nothing to enforce. Keep polling, so
+            // blocking picks up again by itself once access is back.
+            val events = try { readEvents(now - lookbackMs, now) } catch (e: SecurityException) { null }
+            foreground = if (events == null) null else Storage.foregroundFrom(events, foreground)
             lookbackMs = 2 * pollMs
             onForeground(foreground)
             if (polling) handler.postDelayed(this, pollMs)
