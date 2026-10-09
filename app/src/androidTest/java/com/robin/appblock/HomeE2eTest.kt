@@ -13,6 +13,7 @@ import com.robin.appblock.E2e.freshState
 import com.robin.appblock.E2e.min
 import com.robin.appblock.E2e.openApp
 import com.robin.appblock.E2e.openHome
+import com.robin.appblock.E2e.pressOk
 import com.robin.appblock.E2e.seedUsage
 import com.robin.appblock.E2e.selected
 import com.robin.appblock.E2e.shell
@@ -26,6 +27,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -35,6 +37,9 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class HomeE2eTest {
+
+    @get:Rule
+    val screenshotOnFailure = E2e.ScreenshotOnFailure()
 
     @After
     fun leave() {
@@ -58,7 +63,7 @@ class HomeE2eTest {
         val (allow, window) = wheels()
         allow.turnTo("10 min", up = false)
         window.turnTo("1 hr", up = true)
-        waitFor(text("OK")).click()
+        pressOk()
 
         waitFor(text("10 min in any 1 hr · 0 min used"))
         assertEquals(Rule(10, 60), Storage.loadRules(ctx)[CLOCK])
@@ -83,7 +88,7 @@ class HomeE2eTest {
         assertEquals("10 min", allow.selected())
         allow.step()   // try to go past it
         assertEquals("10 min", allow.selected())
-        waitFor(text("OK")).click()
+        pressOk()
 
         waitFor(text("10 min in any 15 min · 0 min used"))
     }
@@ -104,7 +109,7 @@ class HomeE2eTest {
 
         allowField.text = "59"
         assertTrue(device.wait(Until.hasObject(text("OK").enabled(true)), E2e.WAIT))
-        waitFor(text("OK")).click()
+        pressOk()
 
         waitFor(text("59 min in any 1 hr · 0 min used"))
         assertEquals(Rule(59, 60), Storage.loadRules(ctx)[CLOCK])

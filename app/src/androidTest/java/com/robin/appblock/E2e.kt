@@ -9,6 +9,8 @@ import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
+import org.junit.rules.TestWatcher
+import org.junit.runner.Description
 import java.util.regex.Pattern
 
 /**
@@ -102,6 +104,12 @@ object E2e {
 
     // ---- the limit dialog's wheels ----
 
+    /** Press OK on the limit dialog and wait for it to close. */
+    fun pressOk() {
+        waitFor(text("OK")).click()
+        check(device.wait(Until.gone(text("Set limit")), WAIT)) { "the limit dialog didn't close" }
+    }
+
     /** The Allow and in-any wheels, left to right. */
     fun wheels(): List<UiObject2> {
         waitFor(By.clazz(NumberPicker::class.java))
@@ -116,8 +124,14 @@ object E2e {
         val b = visibleBounds
         // A shell tap, not device.click(): that holds for 100 ms, and the
         // wheel only steps on touches shorter than that (longer is a press).
+        val before = selected()
         shell("input tap ${b.centerX()} ${if (up) b.top + b.height() / 6 else b.bottom - b.height() / 6}")
-        Thread.sleep(400)   // let the wheel settle
+        // Wait for the wheel to move off the old value (it won't at either
+        // end), then for its scroll to finish: a fixed pause was too short
+        // on CI's slower emulator.
+        val deadline = System.currentTimeMillis() + 2_000
+        while (selected() == before && System.currentTimeMillis() < deadline) Thread.sleep(50)
+        Thread.sleep(500)
     }
 
     /** Step a wheel until it shows `value`; fails if it never does. */
@@ -127,5 +141,21 @@ object E2e {
             step(up)
         }
         throw AssertionError("wheel never reached $value (stuck at ${selected()})")
+    }
+
+    /**
+     * JUnit rule: a failing test leaves a screenshot of the screen as it
+     * was, like Playwright's. Gradle pulls it into
+     * app/build/outputs/connected_android_test_additional_output/, and CI
+     * uploads it with the report.
+     */
+    class ScreenshotOnFailure : TestWatcher() {
+        override fun failed(e: Throwable?, description: Description) {
+            val dir = InstrumentationRegistry.getArguments().getString("additionalTestOutputDir") ?: return
+            val name = "${description.testClass.simpleName}.${description.methodName}.png"
+            // From the shell: it can write the output directory, the app can't.
+            shell("mkdir -p $dir")
+            shell("screencap -p $dir/$name")
+        }
     }
 }

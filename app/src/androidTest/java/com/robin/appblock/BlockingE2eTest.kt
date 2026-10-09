@@ -18,6 +18,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -28,6 +29,9 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class BlockingE2eTest {
+
+    @get:Rule
+    val screenshotOnFailure = E2e.ScreenshotOnFailure()
 
     private val wall = textContains("Clock is blocked")
 

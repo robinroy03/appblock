@@ -66,10 +66,13 @@ jobs:
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: ./gradlew connectedDebugAndroidTest
-      # Which test failed and why, as an HTML report to download from the run.
+      # Which test failed and why (HTML report), plus a screenshot of the
+      # screen at the moment each failing test failed.
       - name: Upload the e2e report
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: e2e-report
-          path: app/build/reports/androidTests/
+          path: |
+            app/build/reports/androidTests/
+            app/build/outputs/connected_android_test_additional_output/
