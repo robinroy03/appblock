@@ -7,17 +7,25 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Drawable
+import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.provider.Settings
+import android.text.Editable
 import android.text.Html
+import android.text.InputFilter
+import android.text.InputType
+import android.text.TextWatcher
 import android.text.method.LinkMovementMethod
 import android.util.TypedValue
 import android.view.Gravity
-import android.view.HapticFeedbackConstants
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.NumberPicker
@@ -382,8 +390,10 @@ class MainActivity : Activity() {
 
     /**
      * Two scroll wheels, the allowance and the rolling window it's measured
-     * over, each ticking the vibration motor as it turns. OK saves straight
-     * away; Remove (the old ✕) lives here too.
+     * over, each ticking the vibration motor as it turns. "Type exact times"
+     * swaps them for number fields, for limits between the wheel stops.
+     * OK (enabled only for a valid rule) saves straight away; Remove (the
+     * old ✕) lives here too.
      */
     private fun showLimitDialog(pkg: String, rule: Rule) {
         val name = labelFor(pkg)
@@ -405,50 +415,111 @@ class MainActivity : Activity() {
         }
         val (allow, allowValues) = wheel(Storage.ALLOW_CHOICES, rule.allowMin)
         val (window, windowValues) = wheel(Storage.WINDOW_CHOICES, rule.windowMin)
-        fun picked() = Rule(allowValues[allow.value], windowValues[window.value])
+        val allowField = numberField()
+        val windowHField = numberField()
+        val windowMField = numberField()
+        var typing = false
+        fun picked(): Rule? =
+            if (typing) Storage.exactRule(allowField.text.toString(),
+                windowHField.text.toString(), windowMField.text.toString())
+            else Rule(allowValues[allow.value], windowValues[window.value])
+                .takeIf(Storage::validRule)
+
+        lateinit var dialog: AlertDialog
         fun describe() {
             val r = picked()
-            message.text = "$name gets ${Storage.fmtSpan(r.allowMin)} in any " +
+            message.text = if (r == null)
+                "The allowance has to be shorter than the window, and the " +
+                    "window can be at most ${Storage.fmtSpan(Storage.MAX_WINDOW_MIN)}."
+            else "$name gets ${Storage.fmtSpan(r.allowMin)} in any " +
                 "${Storage.fmtSpan(r.windowMin)}. Time comes back as old use " +
                 "rolls out of the window, so there's no midnight reset."
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.isEnabled = r != null
         }
-        describe()
         for (p in listOf(allow, window)) {
             p.setOnValueChangedListener { picker, _, _ ->
-                picker.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                tick()
                 describe()
             }
         }
-        fun column(heading: String, picker: NumberPicker) = LinearLayout(this).apply {
+        val watcher = object : TextWatcher {
+            override fun afterTextChanged(s: Editable) = describe()
+            override fun beforeTextChanged(s: CharSequence, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence, a: Int, b: Int, c: Int) {}
+        }
+        for (f in listOf(allowField, windowHField, windowMField)) f.addTextChangedListener(watcher)
+
+        fun column(heading: String, vararg views: View) = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(16), 0, dp(16), 0)
             addView(TextView(context).apply { text = heading; alpha = 0.7f })
-            addView(picker)
+            if (views.size == 1) addView(views[0])
+            else addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                for (v in views) addView(v)
+            })
         }
-        AlertDialog.Builder(this)
+        fun unit(text: String) = TextView(this).apply {
+            this.text = text
+            setPadding(dp(4), 0, dp(8), 0)
+        }
+        fun pair(vararg columns: View) = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, dp(8), 0, 0)
+            for (c in columns) addView(c)
+        }
+        val wheels = pair(column("Allow", allow), column("in any", window))
+        val fields = pair(
+            column("Allow", allowField, unit("min")),
+            column("in any", windowHField, unit("h"), windowMField, unit("min")))
+            .apply { visibility = View.GONE }
+        val typeLink = TextView(this).apply {
+            text = Html.fromHtml("<u>Type exact times</u>", Html.FROM_HTML_MODE_LEGACY)
+            setTextColor(message.linkTextColors)
+            gravity = Gravity.CENTER
+            setPadding(dp(24), dp(12), dp(24), dp(12))
+            setOnClickListener {
+                // Start the fields from whatever the wheels show now.
+                val r = Rule(allowValues[allow.value], windowValues[window.value])
+                allowField.setText(r.allowMin.toString())
+                windowHField.setText((r.windowMin / 60).toString())
+                windowMField.setText((r.windowMin % 60).toString())
+                typing = true
+                wheels.visibility = View.GONE
+                fields.visibility = View.VISIBLE
+                visibility = View.GONE
+                describe()
+                allowField.requestFocus()
+                allowField.selectAll()
+                (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
+                    .showSoftInput(allowField, 0)
+            }
+        }
+        dialog = AlertDialog.Builder(this)
             .setIcon(iconFor(pkg))
             .setTitle("Set limit")
             .setView(LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 addView(message)
-                addView(LinearLayout(context).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER
-                    setPadding(0, dp(8), 0, 0)
-                    addView(column("Allow", allow))
-                    addView(column("in any", window))
-                })
+                addView(wheels)
+                addView(fields)
+                addView(typeLink)
             })
             .setPositiveButton("OK") { _, _ ->
+                val r = picked() ?: return@setPositiveButton
                 val rules = Storage.loadRules(this).toMutableMap()
-                rules[pkg] = picked()
+                rules[pkg] = r
                 Storage.saveRules(this, rules)
                 rebuild()
             }
             .setNegativeButton("Cancel", null)
             .setNeutralButton("Remove") { _, _ -> removeApp(pkg) }
-            .show()
+            .create()
+        dialog.setOnShowListener { describe() }
+        dialog.show()
     }
 
     // Confirmation guards against accidental taps on Remove.
@@ -474,6 +545,26 @@ class MainActivity : Activity() {
         }.timeInMillis
         return usm.queryAndAggregateUsageStats(midnight, System.currentTimeMillis())
             .mapValues { it.value.totalTimeInForeground }
+    }
+
+    private fun numberField() = EditText(this).apply {
+        inputType = InputType.TYPE_CLASS_NUMBER
+        filters = arrayOf(InputFilter.LengthFilter(4))
+        minEms = 2
+        gravity = Gravity.CENTER
+    }
+
+    /**
+     * One short click of the vibration motor per wheel step. Straight to the
+     * Vibrator rather than performHapticFeedback: that one goes silent when
+     * the phone's "touch feedback" setting is off, and the tick is the point.
+     */
+    private fun tick() {
+        val vibrator = getSystemService(Vibrator::class.java) ?: return
+        vibrator.vibrate(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
+            else VibrationEffect.createOneShot(10, VibrationEffect.DEFAULT_AMPLITUDE))
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()

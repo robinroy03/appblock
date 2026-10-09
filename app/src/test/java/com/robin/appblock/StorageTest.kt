@@ -278,6 +278,33 @@ class StorageTest {
     }
 
     @Test
+    fun `valid rule - allowance shorter than a window of at most a day`() {
+        assertTrue(Storage.validRule(Rule(5, 120)))
+        assertTrue(Storage.validRule(Rule(1, 1440)))
+        assertFalse(Storage.validRule(Rule(0, 120)))       // no allowance
+        assertFalse(Storage.validRule(Rule(30, 30)))       // never blocks
+        assertFalse(Storage.validRule(Rule(60, 15)))
+        assertFalse(Storage.validRule(Rule(5, 1441)))      // over a day
+    }
+
+    @Test
+    fun `exact rule - hours and minutes add up, blanks count as zero`() {
+        assertEquals(Rule(6, 94), Storage.exactRule("6", "1", "34"))
+        assertEquals(Rule(6, 94), Storage.exactRule(" 6 ", "", "94"))
+        assertEquals(Rule(5, 120), Storage.exactRule("5", "2", ""))
+    }
+
+    @Test
+    fun `exact rule - nonsense is rejected`() {
+        assertEquals(null, Storage.exactRule("", "2", "0"))      // no allowance
+        assertEquals(null, Storage.exactRule("0", "2", "0"))
+        assertEquals(null, Storage.exactRule("120", "2", "0"))   // allowance = window
+        assertEquals(null, Storage.exactRule("5", "", ""))       // no window
+        assertEquals(null, Storage.exactRule("5", "25", "0"))    // over a day
+        assertEquals(null, Storage.exactRule("5", "9999", "0"))  // no overflow sneaking through
+    }
+
+    @Test
     fun `used percent - exact, capped at 100`() {
         assertEquals(0, Storage.usedPct(0L, 5))
         assertEquals(52, Storage.usedPct(156_000, 5))              // 2.6 of 5 min

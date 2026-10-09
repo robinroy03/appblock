@@ -219,6 +219,31 @@ object Storage {
     fun wheelChoices(standard: List<Int>, current: Int): List<Int> =
         if (current in standard) standard else (standard + current).sorted()
 
+    // Longest window a rule may have (the wheel's top stop). It also bounds
+    // msUntilUnblocked's minute-by-minute walk.
+    const val MAX_WINDOW_MIN = 1440
+
+    /**
+     * Whether a rule can actually limit anything: some allowance, shorter
+     * than its window (allowance >= window would never block), and a window
+     * of at most MAX_WINDOW_MIN. Gates the limit dialog's OK button.
+     */
+    fun validRule(rule: Rule): Boolean =
+        rule.allowMin >= 1 && rule.allowMin < rule.windowMin && rule.windowMin <= MAX_WINDOW_MIN
+
+    /**
+     * The rule typed into the limit dialog's exact fields: allowance in
+     * minutes, window as hours + minutes ("6", "1", "34" -> 6 min in any 94).
+     * A blank window field counts as 0; null when it isn't a valid rule.
+     */
+    fun exactRule(allow: String, windowH: String, windowM: String): Rule? {
+        val a = allow.trim().toIntOrNull() ?: return null
+        val h = windowH.trim().ifEmpty { "0" }.toIntOrNull() ?: return null
+        val m = windowM.trim().ifEmpty { "0" }.toIntOrNull() ?: return null
+        if (h > MAX_WINDOW_MIN || m > MAX_WINDOW_MIN) return null   // no overflow below
+        return Rule(a, h * 60 + m).takeIf(::validRule)
+    }
+
     /**
      * Minutes to show as "N min used" on a home-list card: partial minutes round up
      * (any use shows at least 1), capped at the allowance so slight overshoot

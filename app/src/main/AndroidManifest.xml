@@ -31,6 +31,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
+    <!-- The tick as the limit dialog's scroll wheels turn -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- Restart the blocker after a reboot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
