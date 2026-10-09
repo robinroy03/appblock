@@ -22,4 +22,5 @@ Thanks for understanding.
 ---
 
 *Maintainer note: after cloning, enable the test-running pre-commit hook once with
-`git config core.hooksPath .githooks`. CI runs the same tests on every push.*
+`git config core.hooksPath .githooks`. CI runs the same tests on every push,
+plus the end-to-end tests on an emulator (`scripts/e2e.sh` runs those locally).*
