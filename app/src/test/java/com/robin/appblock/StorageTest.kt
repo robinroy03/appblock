@@ -248,14 +248,17 @@ class StorageTest {
     }
 
     @Test
-    fun `rule spans - minutes, one hour, hours, mixed`() {
+    fun `rule spans - minutes, hours, days, mixed`() {
         assertEquals("5 min", Storage.fmtSpan(5))
         assertEquals("45 min", Storage.fmtSpan(45))
         assertEquals("1 hr", Storage.fmtSpan(60))
         assertEquals("1 hr 30 min", Storage.fmtSpan(90))
         assertEquals("2 hrs", Storage.fmtSpan(120))
         assertEquals("2 hrs 5 min", Storage.fmtSpan(125))
-        assertEquals("24 hrs", Storage.fmtSpan(1440))
+        assertEquals("1 day", Storage.fmtSpan(1440))
+        assertEquals("1 day 6 hrs", Storage.fmtSpan(1800))
+        assertEquals("7 days", Storage.fmtSpan(10080))
+        assertEquals("2 days 30 min", Storage.fmtSpan(2910))
     }
 
     @Test
@@ -278,13 +281,12 @@ class StorageTest {
     }
 
     @Test
-    fun `valid rule - allowance shorter than a window of at most a day`() {
+    fun `valid rule - some allowance, shorter than the window`() {
         assertTrue(Storage.validRule(Rule(5, 120)))
-        assertTrue(Storage.validRule(Rule(1, 1440)))
+        assertTrue(Storage.validRule(Rule(360, 10080)))    // 6 hrs in any week
         assertFalse(Storage.validRule(Rule(0, 120)))       // no allowance
         assertFalse(Storage.validRule(Rule(30, 30)))       // never blocks
         assertFalse(Storage.validRule(Rule(60, 15)))
-        assertFalse(Storage.validRule(Rule(5, 1441)))      // over a day
     }
 
     @Test
@@ -292,6 +294,7 @@ class StorageTest {
         assertEquals(Rule(6, 94), Storage.exactRule("6", "1", "34"))
         assertEquals(Rule(6, 94), Storage.exactRule(" 6 ", "", "94"))
         assertEquals(Rule(5, 120), Storage.exactRule("5", "2", ""))
+        assertEquals(Rule(360, 10080), Storage.exactRule("360", "168", "0"))   // 6 hrs in any week
     }
 
     @Test
@@ -300,8 +303,31 @@ class StorageTest {
         assertEquals(null, Storage.exactRule("0", "2", "0"))
         assertEquals(null, Storage.exactRule("120", "2", "0"))   // allowance = window
         assertEquals(null, Storage.exactRule("5", "", ""))       // no window
-        assertEquals(null, Storage.exactRule("5", "25", "0"))    // over a day
-        assertEquals(null, Storage.exactRule("5", "9999", "0"))  // no overflow sneaking through
+        assertEquals(null, Storage.exactRule("5", "99999999999", "0"))   // too big to store
+    }
+
+    @Test
+    fun `usage log - a flush continuing the last entry extends it`() {
+        val log = listOf((now - 10.min) to (now - 5.min))
+        // The service flushes a running session every few seconds: one entry, not many.
+        assertEquals(listOf((now - 10.min) to now),
+            Storage.appendUsage(log, now - 5.min, now, cutoff = now - 120.min))
+    }
+
+    @Test
+    fun `usage log - a separate session is a new entry, aged-out ones dropped`() {
+        val log = listOf((now - 200.min) to (now - 190.min), (now - 30.min) to (now - 20.min))
+        assertEquals(listOf((now - 30.min) to (now - 20.min), (now - 5.min) to now),
+            Storage.appendUsage(log, now - 5.min, now, cutoff = now - 120.min))
+    }
+
+    @Test
+    fun `week-long window - wait spans days and lands on the right minute`() {
+        val week = Rule(allowMin = 60, windowMin = 7 * 24 * 60)
+        // An hour used a day ago: free again once it starts leaving the week,
+        // 6 days minus an hour from now, plus the one minute that frees.
+        val intervals = listOf((now - 25 * 60.min) to (now - 24 * 60.min))
+        assertEquals((6 * 24 * 60 - 60 + 1).min, Storage.msUntilUnblocked(intervals, week, now))
     }
 
     @Test

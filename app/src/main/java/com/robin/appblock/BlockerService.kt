@@ -253,7 +253,7 @@ class BlockerService : Service() {
         // LOW: icon in the status bar, no sound or heads-up.
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL_TIMER, "Session timer", NotificationManager.IMPORTANCE_LOW))
-        val text = if (level == 0) "Allowance for the next ${rule.windowMin} min window."
+        val text = if (level == 0) "Allowance for the next ${Storage.fmtSpan(rule.windowMin)} window."
             else "You've used ${Storage.usedPct(usedMs, rule.allowMin)}% " +
                 "(${Storage.fmtMin(usedMs)} min) of your usage for ${labelFor(pkg)}"
         show(NOTIF_TIMER, Notification.Builder(this, CHANNEL_TIMER)
@@ -325,7 +325,7 @@ class BlockerService : Service() {
             setPadding(64, 0, 64, 0)
             setBackgroundColor(if (night) 0xFF121212.toInt() else 0xFFFAFAFA.toInt())
             addView(TextView(context).apply {
-                text = "$label is blocked.\n\nTry again in $waitMin min."
+                text = "$label is blocked.\n\nTry again in ${Storage.fmtSpan(waitMin.toInt())}."
                 textSize = 24f
                 gravity = Gravity.CENTER
                 setTextColor(if (night) 0xFFEEEEEE.toInt() else 0xFF111111.toInt())

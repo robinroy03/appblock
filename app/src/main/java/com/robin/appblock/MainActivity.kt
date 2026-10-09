@@ -9,12 +9,12 @@ import android.content.Intent
 import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Bundle
+import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.provider.Settings
 import android.text.Editable
 import android.text.Html
-import android.text.InputFilter
 import android.text.InputType
 import android.text.TextWatcher
 import android.text.method.LinkMovementMethod
@@ -391,7 +391,8 @@ class MainActivity : Activity() {
     /**
      * Two scroll wheels, the allowance and the rolling window it's measured
      * over, each ticking the vibration motor as it turns. "Type exact times"
-     * swaps them for number fields, for limits between the wheel stops.
+     * swaps them for number fields, for limits between or beyond the wheel
+     * stops (a week is 168 h).
      * OK (enabled only for a valid rule) saves straight away; Remove (the
      * old ✕) lives here too.
      */
@@ -429,8 +430,8 @@ class MainActivity : Activity() {
         fun describe() {
             val r = picked()
             message.text = if (r == null)
-                "The allowance has to be shorter than the window, and the " +
-                    "window can be at most ${Storage.fmtSpan(Storage.MAX_WINDOW_MIN)}."
+                "The allowance has to be shorter than the window, or $name " +
+                    "would never be blocked."
             else "$name gets ${Storage.fmtSpan(r.allowMin)} in any " +
                 "${Storage.fmtSpan(r.windowMin)}. Time comes back as old use " +
                 "rolls out of the window, so there's no midnight reset."
@@ -549,22 +550,24 @@ class MainActivity : Activity() {
 
     private fun numberField() = EditText(this).apply {
         inputType = InputType.TYPE_CLASS_NUMBER
-        filters = arrayOf(InputFilter.LengthFilter(4))
         minEms = 2
         gravity = Gravity.CENTER
     }
 
     /**
-     * One short click of the vibration motor per wheel step. Straight to the
-     * Vibrator rather than performHapticFeedback: that one goes silent when
-     * the phone's "touch feedback" setting is off, and the tick is the point.
+     * One short click of the vibration motor per wheel step: a plain 12 ms
+     * pulse, tagged as a media vibration. Anything Android or OxygenOS files
+     * as touch feedback (performHapticFeedback, the predefined TICK, even an
+     * untagged short pulse) is silent while the phone's "touch feedback"
+     * setting is off, and the tick is the point.
      */
     private fun tick() {
         val vibrator = getSystemService(Vibrator::class.java) ?: return
-        vibrator.vibrate(
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
-                VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
-            else VibrationEffect.createOneShot(10, VibrationEffect.DEFAULT_AMPLITUDE))
+        val pulse = VibrationEffect.createOneShot(12,
+            if (vibrator.hasAmplitudeControl()) 180 else VibrationEffect.DEFAULT_AMPLITUDE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+            vibrator.vibrate(pulse, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_MEDIA))
+        else vibrator.vibrate(pulse)
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()

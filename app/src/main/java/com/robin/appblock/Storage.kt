@@ -24,18 +24,23 @@ object Storage {
     }
 
     /**
-     * How long until the rolling window frees up enough budget to use the app again
-     * (0 if it's usable right now). Walks forward minute by minute until
-     * usage-in-window drops below the allowance.
+     * How long until the rolling window frees up enough budget to use the app
+     * again (0 if it's usable right now), in whole minutes. With no new use
+     * after `now`, usage in the window only falls as time passes, so this
+     * binary-searches for the first minute it's under the allowance: a few
+     * dozen steps even for a window of weeks.
      */
     fun msUntilUnblocked(intervals: List<Pair<Long, Long>>, rule: Rule, now: Long): Long {
         val allowMs = rule.allowMin * 60_000L
-        var t = now
-        while (t <= now + rule.windowMin * 60_000L) {
-            if (usedMs(intervals, rule.windowMin, t) < allowMs) return t - now
-            t += 60_000L
+        fun freeAfter(min: Long) = usedMs(intervals, rule.windowMin, now + min * 60_000L) < allowMs
+        var lo = 0L
+        var hi = rule.windowMin.toLong()
+        if (!freeAfter(hi)) return hi * 60_000L
+        while (lo < hi) {
+            val mid = (lo + hi) / 2
+            if (freeAfter(mid)) hi = mid else lo = mid + 1
         }
-        return rule.windowMin * 60_000L
+        return lo * 60_000L
     }
 
     /** Whole minutes for display, any partial minute rounding up. */
@@ -187,16 +192,19 @@ object Storage {
         missing.joinToString("\n\n") { "${it.title}: ${it.why}" } +
             "\n\nThe buttons on the home screen will get you set up."
 
-    /** A rule's spans in words, for the home list and the limit wheels: "45 min", "1 hr", "2 hrs", "1 hr 30 min". */
+    /**
+     * A span in words, for the home list, the limit dialog and the block
+     * wall: "45 min", "1 hr", "2 hrs", "1 hr 30 min", "7 days", "1 day 6 hrs".
+     */
     fun fmtSpan(min: Int): String {
-        val h = min / 60
+        val d = min / 1440
+        val h = min / 60 % 24
         val m = min % 60
-        val hrs = if (h == 1) "1 hr" else "$h hrs"
-        return when {
-            h == 0 -> "$m min"
-            m == 0 -> hrs
-            else -> "$hrs $m min"
-        }
+        val parts = listOfNotNull(
+            if (d == 0) null else if (d == 1) "1 day" else "$d days",
+            if (h == 0) null else if (h == 1) "1 hr" else "$h hrs",
+            if (m == 0) null else "$m min")
+        return if (parts.isEmpty()) "0 min" else parts.joinToString(" ")
     }
 
     /** Today's screen time under an app's name on the home list. */
@@ -207,9 +215,10 @@ object Storage {
     }
 
     // Stops on the limit dialog's two wheels: the allowance, and the rolling
-    // window it's measured over.
-    val ALLOW_CHOICES = listOf(1, 2, 3, 4, 5, 10, 15, 20, 30, 45, 60)
-    val WINDOW_CHOICES = listOf(15, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720, 1440)
+    // window it's measured over. Anything in between: "Type exact times".
+    val ALLOW_CHOICES = listOf(1, 2, 3, 4, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180)
+    val WINDOW_CHOICES = listOf(15, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720,
+        1440, 2880, 4320, 10080)
 
     /**
      * A wheel's stops: the standard choices, plus `current` slotted in order
@@ -219,29 +228,28 @@ object Storage {
     fun wheelChoices(standard: List<Int>, current: Int): List<Int> =
         if (current in standard) standard else (standard + current).sorted()
 
-    // Longest window a rule may have (the wheel's top stop). It also bounds
-    // msUntilUnblocked's minute-by-minute walk.
-    const val MAX_WINDOW_MIN = 1440
-
     /**
      * Whether a rule can actually limit anything: some allowance, shorter
-     * than its window (allowance >= window would never block), and a window
-     * of at most MAX_WINDOW_MIN. Gates the limit dialog's OK button.
+     * than its window (allowance >= window would never block). Gates the
+     * limit dialog's OK button.
      */
     fun validRule(rule: Rule): Boolean =
-        rule.allowMin >= 1 && rule.allowMin < rule.windowMin && rule.windowMin <= MAX_WINDOW_MIN
+        rule.allowMin >= 1 && rule.allowMin < rule.windowMin
 
     /**
      * The rule typed into the limit dialog's exact fields: allowance in
      * minutes, window as hours + minutes ("6", "1", "34" -> 6 min in any 94).
-     * A blank window field counts as 0; null when it isn't a valid rule.
+     * A blank window field counts as 0; null when it isn't a valid rule or
+     * is too big to store.
      */
     fun exactRule(allow: String, windowH: String, windowM: String): Rule? {
-        val a = allow.trim().toIntOrNull() ?: return null
-        val h = windowH.trim().ifEmpty { "0" }.toIntOrNull() ?: return null
-        val m = windowM.trim().ifEmpty { "0" }.toIntOrNull() ?: return null
-        if (h > MAX_WINDOW_MIN || m > MAX_WINDOW_MIN) return null   // no overflow below
-        return Rule(a, h * 60 + m).takeIf(::validRule)
+        val a = allow.trim().toLongOrNull() ?: return null
+        val h = windowH.trim().ifEmpty { "0" }.toLongOrNull() ?: return null
+        val m = windowM.trim().ifEmpty { "0" }.toLongOrNull() ?: return null
+        if (maxOf(a, h, m) > Int.MAX_VALUE) return null
+        val w = h * 60 + m
+        if (w > Int.MAX_VALUE) return null
+        return Rule(a.toInt(), w.toInt()).takeIf(::validRule)
     }
 
     /**
@@ -312,19 +320,31 @@ object Storage {
         }
     }
 
+    /**
+     * The usage log after recording [start, end]: entries that ended before
+     * `cutoff` dropped, and the new one merged into the last when it picks up
+     * where that one stopped. The service flushes a running session every
+     * few seconds, so without merging a week-long window would hold
+     * thousands of entries.
+     */
+    fun appendUsage(log: List<Pair<Long, Long>>, start: Long, end: Long, cutoff: Long):
+        List<Pair<Long, Long>> {
+        val kept = log.filter { it.second > cutoff }.toMutableList()
+        val last = kept.lastOrNull()
+        if (last != null && start <= last.second) kept[kept.lastIndex] = last.first to maxOf(last.second, end)
+        else kept += start to end
+        return kept
+    }
+
     /** Record that `pkg` was used from `start` to `end`, dropping entries too old to matter. */
     fun addUsage(ctx: Context, pkg: String, start: Long, end: Long, windowMin: Int) {
         if (end <= start) return
         val all = loadUsage(ctx)
-        val old = all.optJSONArray(pkg) ?: JSONArray()
         val cutoff = System.currentTimeMillis() - windowMin * 60_000L
-        val kept = JSONArray()
-        for (i in 0 until old.length()) {
-            val iv = old.getJSONArray(i)
-            if (iv.getLong(1) > cutoff) kept.put(iv)
-        }
-        kept.put(JSONArray().put(start).put(end))
-        all.put(pkg, kept)
+        val log = appendUsage(loadIntervals(ctx, pkg), start, end, cutoff)
+        all.put(pkg, JSONArray().apply {
+            for ((s, e) in log) put(JSONArray().put(s).put(e))
+        })
         prefs(ctx).edit().putString("usage", all.toString()).apply()
     }
 
