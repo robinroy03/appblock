@@ -402,20 +402,26 @@ class MainActivity : Activity() {
             textSize = 16f
             setPadding(dp(24), dp(8), dp(24), dp(8))
         }
-        fun wheel(standard: List<Int>, current: Int): Pair<NumberPicker, List<Int>> {
-            val values = Storage.wheelChoices(standard, current)
-            return NumberPicker(this).apply {
-                minValue = 0
-                maxValue = values.size - 1
-                displayedValues = values.map(Storage::fmtSpan).toTypedArray()
-                value = values.indexOf(current)
-                wrapSelectorWheel = false
-                // Wheel only: no tap-to-type keyboard on the selected value.
-                descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
-            } to values
+        fun NumberPicker.show(values: List<Int>, selected: Int) {
+            // Clear the labels first: a new max past the old labels' length throws.
+            displayedValues = null
+            minValue = 0
+            maxValue = values.size - 1
+            displayedValues = values.map(Storage::fmtSpan).toTypedArray()
+            value = values.indexOf(selected)
         }
-        val (allow, allowValues) = wheel(Storage.ALLOW_CHOICES, rule.allowMin)
-        val (window, windowValues) = wheel(Storage.WINDOW_CHOICES, rule.windowMin)
+        fun wheel() = NumberPicker(this).apply {
+            wrapSelectorWheel = false
+            // Wheel only: no tap-to-type keyboard on the selected value.
+            descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
+        }
+        val window = wheel()
+        val windowValues = Storage.wheelChoices(Storage.WINDOW_CHOICES, rule.windowMin)
+        window.show(windowValues, rule.windowMin)
+        // The Allow wheel only ever offers allowances shorter than the window.
+        val allow = wheel()
+        var allowValues = Storage.allowStops(rule.windowMin, rule.allowMin)
+        allow.show(allowValues, Storage.keepStop(allowValues, rule.allowMin))
         val allowField = numberField()
         val windowHField = numberField()
         val windowMField = numberField()
@@ -429,19 +435,25 @@ class MainActivity : Activity() {
         lateinit var dialog: AlertDialog
         fun describe() {
             val r = picked()
-            message.text = if (r == null)
-                "The allowance has to be shorter than the window, or $name " +
-                    "would never be blocked."
-            else "$name gets ${Storage.fmtSpan(r.allowMin)} in any " +
+            // The wheels can't pick nonsense; typed numbers can, so the
+            // Allow field says what's wrong and OK waits for a valid rule.
+            if (typing) allowField.error = Storage.exactAllowError(allowField.text.toString(),
+                windowHField.text.toString(), windowMField.text.toString())
+            if (r != null) message.text = "$name gets ${Storage.fmtSpan(r.allowMin)} in any " +
                 "${Storage.fmtSpan(r.windowMin)}. Time comes back as old use " +
                 "rolls out of the window, so there's no midnight reset."
             dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.isEnabled = r != null
         }
-        for (p in listOf(allow, window)) {
-            p.setOnValueChangedListener { picker, _, _ ->
-                tick()
-                describe()
-            }
+        allow.setOnValueChangedListener { _, _, _ ->
+            tick()
+            describe()
+        }
+        window.setOnValueChangedListener { _, _, _ ->
+            tick()
+            val previous = allowValues[allow.value]
+            allowValues = Storage.allowStops(windowValues[window.value], previous)
+            allow.show(allowValues, Storage.keepStop(allowValues, previous))
+            describe()
         }
         val watcher = object : TextWatcher {
             override fun afterTextChanged(s: Editable) = describe()

@@ -237,19 +237,52 @@ object Storage {
         rule.allowMin >= 1 && rule.allowMin < rule.windowMin
 
     /**
-     * The rule typed into the limit dialog's exact fields: allowance in
-     * minutes, window as hours + minutes ("6", "1", "34" -> 6 min in any 94).
-     * A blank window field counts as 0; null when it isn't a valid rule or
-     * is too big to store.
+     * The Allow wheel's stops for a given window: only allowances shorter
+     * than it, so the wheels can't land on a rule that would never block.
      */
-    fun exactRule(allow: String, windowH: String, windowM: String): Rule? {
-        val a = allow.trim().toLongOrNull() ?: return null
+    fun allowStops(windowMin: Int, currentAllow: Int): List<Int> =
+        wheelChoices(ALLOW_CHOICES, currentAllow).filter { it < windowMin }.ifEmpty { listOf(1) }
+
+    /**
+     * Where the Allow wheel lands after its stops change: the same value if
+     * it's still there, else the largest stop below it (the window shrank
+     * under it), else the first.
+     */
+    fun keepStop(stops: List<Int>, previous: Int): Int =
+        stops.lastOrNull { it <= previous } ?: stops.first()
+
+    /** Minutes in the exact window fields (hours + minutes, a blank counts as 0); null if unreadable, zero or too big to store. */
+    fun exactWindowMin(windowH: String, windowM: String): Int? {
         val h = windowH.trim().ifEmpty { "0" }.toLongOrNull() ?: return null
         val m = windowM.trim().ifEmpty { "0" }.toLongOrNull() ?: return null
-        if (maxOf(a, h, m) > Int.MAX_VALUE) return null
+        if (maxOf(h, m) > Int.MAX_VALUE) return null
         val w = h * 60 + m
-        if (w > Int.MAX_VALUE) return null
-        return Rule(a.toInt(), w.toInt()).takeIf(::validRule)
+        return if (w < 1 || w > Int.MAX_VALUE) null else w.toInt()
+    }
+
+    /**
+     * The rule typed into the limit dialog's exact fields: allowance in
+     * minutes, window as hours + minutes ("6", "1", "34" -> 6 min in any 94).
+     * Null until it's a valid rule.
+     */
+    fun exactRule(allow: String, windowH: String, windowM: String): Rule? {
+        val a = allow.trim().toIntOrNull() ?: return null
+        val w = exactWindowMin(windowH, windowM) ?: return null
+        return Rule(a, w).takeIf(::validRule)
+    }
+
+    /**
+     * Inline error for the exact Allow field, or null. Only once both fields
+     * hold numbers, so half-typed input isn't flagged.
+     */
+    fun exactAllowError(allow: String, windowH: String, windowM: String): String? {
+        val a = allow.trim().toIntOrNull() ?: return null
+        val w = exactWindowMin(windowH, windowM) ?: return null
+        return when {
+            a < 1 -> "At least 1 min"
+            a >= w -> "Has to be shorter than the window"
+            else -> null
+        }
     }
 
     /**

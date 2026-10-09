@@ -307,6 +307,31 @@ class StorageTest {
     }
 
     @Test
+    fun `allow stops - only allowances shorter than the window`() {
+        assertEquals(listOf(1, 2, 3, 4, 5, 10), Storage.allowStops(15, 5))
+        assertEquals(listOf(1, 2, 3, 4, 5, 7, 10), Storage.allowStops(15, 7))   // odd old value kept
+        assertEquals(Storage.ALLOW_CHOICES, Storage.allowStops(10080, 5))
+        assertEquals(listOf(1), Storage.allowStops(1, 5))                      // never empty
+    }
+
+    @Test
+    fun `allow wheel - keeps its value, or drops to the largest that still fits`() {
+        assertEquals(5, Storage.keepStop(listOf(1, 2, 5, 10), 5))
+        assertEquals(10, Storage.keepStop(listOf(1, 2, 5, 10), 45))   // window shrank under it
+        assertEquals(1, Storage.keepStop(listOf(1, 2), 0))
+    }
+
+    @Test
+    fun `exact allow error - flags only complete nonsense`() {
+        assertEquals(null, Storage.exactAllowError("6", "1", "34"))
+        assertEquals(null, Storage.exactAllowError("", "1", "34"))       // still typing
+        assertEquals(null, Storage.exactAllowError("6", "", ""))         // window not typed yet
+        assertEquals("At least 1 min", Storage.exactAllowError("0", "1", "0"))
+        assertEquals("Has to be shorter than the window", Storage.exactAllowError("60", "1", "0"))
+        assertEquals("Has to be shorter than the window", Storage.exactAllowError("90", "1", "0"))
+    }
+
+    @Test
     fun `usage log - a flush continuing the last entry extends it`() {
         val log = listOf((now - 10.min) to (now - 5.min))
         // The service flushes a running session every few seconds: one entry, not many.
