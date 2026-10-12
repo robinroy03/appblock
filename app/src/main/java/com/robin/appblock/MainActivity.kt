@@ -387,9 +387,10 @@ class MainActivity : Activity() {
     }
 
     /**
-     * The "i": one fixed frame (InfoSheet) with About on its first page and
-     * Permissions, How it works and Philosophy sliding in over it. Swipe
-     * down to close; there's no Done button.
+     * The "i": one fixed frame (InfoSheet). The first page is About with
+     * every permission listed (tap one to fix it) and two serif buttons that
+     * slide in How it works and Philosophy. Swipe down to close; there's no
+     * Done button.
      */
     private fun showAbout() {
         val version = try {
@@ -400,23 +401,56 @@ class MainActivity : Activity() {
         fun hairline() = View(this).apply { setBackgroundColor(getColor(R.color.line)) }
             .also { it.layoutParams = LinearLayout.LayoutParams(Ui.MATCH, 1) }
 
-        // The Permissions row: its chip and second line follow the live state.
-        val permsChip = Ui.statusChip(this, true)
-        val permsRow = Ui.row(this, R.drawable.ic_shield, "Permissions", "", permsChip) {
-            sheet.push(permissionsPage(sheet, updates))
+        /** A permission row, small and indented under its heading. Tap to fix. */
+        fun permission(icon: Int, title: String, why: String, enabled: () -> Boolean, fix: () -> Unit): View {
+            val chip = TextView(this)
+            fun paint() {
+                Ui.setChip(chip, enabled())
+                chip.textSize = 11f
+                chip.setPadding(Ui.dp(this, 8), Ui.dp(this, 3), Ui.dp(this, 8), Ui.dp(this, 3))
+            }
+            paint()
+            updates += ::paint
+            return LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(Ui.dp(context, 14), Ui.dp(context, 9), 0, Ui.dp(context, 9))
+                addView(Ui.icon(context, icon, 16, R.color.muted).apply {
+                    (layoutParams as LinearLayout.LayoutParams).marginEnd = Ui.dp(context, 12)
+                })
+                addView(LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(Ui.txt(context, title, 14f, medium = true, tracking = -0.01f))
+                    addView(Ui.muted(context, why, 12.5f).apply { setLineSpacing(0f, 1.3f) },
+                        Ui.lp().apply { topMargin = Ui.dp(context, 1) })
+                }, Ui.lp(0).apply { weight = 1f; marginEnd = Ui.dp(context, 12) })
+                addView(chip)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { fix() }
+                Ui.press(this, 0.98f)
+            }
         }
-        val permsNote = (permsRow.getChildAt(1) as LinearLayout).getChildAt(1) as TextView
-        fun paintPerms() {
-            val good = allRequirementsMet(this) && notificationsEnabled()
-            Ui.setChip(permsChip, good)
-            if (!good) permsChip.text = "Check"
-            permsNote.text = if (good) "Everything is on" else "Something needs attention"
-        }
-        paintPerms()
-        updates += ::paintPerms
+
         refreshPermRows = { updates.forEach { it() } }
         sheet.setOnDismissListener { refreshPermRows = null }
 
+        /** Serif link into a reading page: type and a chevron, no container behind it. */
+        fun reading(title: String, caption: String, page: () -> View) = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, Ui.dp(context, 14), Ui.dp(context, 4), Ui.dp(context, 14))
+            isClickable = true
+            isFocusable = true
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(Ui.display(context, title, 26f))
+                addView(Ui.muted(context, caption, 13f), Ui.lp().apply { topMargin = Ui.dp(context, 5) })
+            }, Ui.lp(0).apply { weight = 1f })
+            addView(Ui.icon(context, R.drawable.ic_chevron, 18, R.color.muted))
+            setOnClickListener { sheet.push(page()) }
+            Ui.press(this, 0.98f)
+        }
         val links = Ui.muted(this, "", 13f).apply {
             gravity = Gravity.CENTER
             text = Html.fromHtml(
@@ -429,40 +463,58 @@ class MainActivity : Activity() {
         }
 
         val first = sheet.page {
-            // Free height is shared: a little above the mark, more above the links.
-            addView(View(context), LinearLayout.LayoutParams(Ui.MATCH, 0, 0.5f))
-            // The mark, the name, one line of what it is for.
+            // Name and mark, side by side: small, so the page is for the content.
             addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(RingView(context, 5f).apply { drawIn() },
+                    LinearLayout.LayoutParams(Ui.dp(context, 60), Ui.dp(context, 60)))
+                addView(LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(Ui.display(context, "AppBlock", 30f))
+                    addView(Ui.muted(context, "Version $version", 14f),
+                        Ui.lp().apply { topMargin = Ui.dp(context, 4) })
+                }, Ui.lp(0).apply { weight = 1f; marginStart = Ui.dp(context, 18) })
+            }, Ui.lp().apply { topMargin = Ui.dp(context, 8) })
+
+            addView(Ui.muted(context, "Set the rule while you're calm.", 19f).apply {
+                typeface = Ui.serif(context, italic = true)
+            }, Ui.lp().apply { topMargin = Ui.dp(context, 18) })
+
+            // Every permission, in place: a small group under its heading.
+            addView(Ui.eyebrow(context, "Permissions"), Ui.lp().apply { topMargin = Ui.dp(context, 28) })
+            val group = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER_HORIZONTAL
-                addView(RingView(context, 6f).apply { drawIn() },
-                    LinearLayout.LayoutParams(Ui.dp(context, 76), Ui.dp(context, 76)))
-                addView(Ui.display(context, "AppBlock", 34f),
-                    Ui.lp(Ui.WRAP).apply { topMargin = Ui.dp(context, 22) })
-                addView(Ui.muted(context, "Version $version", 14f),
-                    Ui.lp(Ui.WRAP).apply { topMargin = Ui.dp(context, 8) })
-                addView(Ui.muted(context, "Set the rule while you're calm.", 20f).apply {
-                    typeface = Ui.serif(context, italic = true)
-                }, Ui.lp(Ui.WRAP).apply { topMargin = Ui.dp(context, 18) })
-            }, Ui.lp().apply { topMargin = Ui.dp(context, 16); bottomMargin = Ui.dp(context, 32) })
+                for (req in Storage.Requirement.entries) {
+                    addView(permission(
+                        when (req) {
+                            Storage.Requirement.USAGE_ACCESS -> R.drawable.ic_clock
+                            Storage.Requirement.OVERLAY -> R.drawable.ic_layers
+                            Storage.Requirement.BATTERY -> R.drawable.ic_battery
+                        },
+                        req.title, req.permsNote, { requirementMet(this@MainActivity, req) },
+                        { requirementFix(req) }))
+                }
+                addView(permission(R.drawable.ic_bell, "Notifications",
+                    "Optional. Warns you at 50% and 90% of an app's allowance.",
+                    ::notificationsEnabled, ::openNotificationSettings))
+            }
+            addView(group, Ui.lp().apply { topMargin = Ui.dp(context, 6) })
 
+            addView(View(context), LinearLayout.LayoutParams(Ui.MATCH, Ui.dp(context, 16), 1f))
+
+            // The reading: two serif links, set apart by hairlines.
             addView(hairline())
-            addView(permsRow)
-            addView(hairline())
-            addView(Ui.row(context, R.drawable.ic_lock, "Philosophy",
-                "Why it exists: tie yourself to the mast") {
-                sheet.push(Guides.philosophy(sheet))
+            addView(reading("Philosophy", "Why it exists: tie yourself to the mast") {
+                Guides.philosophy(sheet)
             })
             addView(hairline())
-            addView(Ui.row(context, R.drawable.ic_clock, "How it works",
-                "Allowances, the wall, the warnings") {
-                sheet.push(Guides.howItWorks(sheet))
+            addView(reading("How it works", "Allowances, the wall, the warnings") {
+                Guides.howItWorks(sheet)
             })
             addView(hairline())
-
-            // Pins the links to the bottom of the frame.
-            addView(View(context), LinearLayout.LayoutParams(Ui.MATCH, 0, 1f))
-            addView(links, Ui.lp().apply { topMargin = Ui.dp(context, 24) })
+            addView(View(context), LinearLayout.LayoutParams(Ui.MATCH, Ui.dp(context, 20), 1f))
+            addView(links)
         }
         sheet.show(first)
     }
@@ -503,33 +555,6 @@ class MainActivity : Activity() {
             .putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
     }
 
-    /** One row per permission: icon, name, what it's for, On/Off. Tap to fix. */
-    private fun permissionsPage(sheet: InfoSheet, updates: MutableList<() -> Unit>): View {
-        fun row(icon: Int, title: String, why: String, enabled: () -> Boolean, fix: () -> Unit): View {
-            val chip = Ui.statusChip(this, enabled())
-            updates += { Ui.setChip(chip, enabled()) }
-            return Ui.row(this, icon, title, why, chip) { fix() }
-        }
-        return sheet.page("Permissions", "What AppBlock needs, and why.") {
-            val list = LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                for (req in Storage.Requirement.entries) {
-                    addView(row(
-                        when (req) {
-                            Storage.Requirement.USAGE_ACCESS -> R.drawable.ic_clock
-                            Storage.Requirement.OVERLAY -> R.drawable.ic_layers
-                            Storage.Requirement.BATTERY -> R.drawable.ic_battery
-                        },
-                        req.title, req.permsNote, { requirementMet(this@MainActivity, req) },
-                        { requirementFix(req) }))
-                }
-                addView(row(R.drawable.ic_bell, "Notifications",
-                    "Optional. Warns you at 50% and 90% of an app's allowance.",
-                    ::notificationsEnabled, ::openNotificationSettings))
-            }
-            addView(list, Ui.lp().apply { topMargin = Ui.dp(context, 12) })
-        }
-    }
     // ----------------------------------------------------------------- limit
 
     /**
