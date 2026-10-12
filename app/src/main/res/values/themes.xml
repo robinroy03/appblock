@@ -13,6 +13,9 @@
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowLightNavigationBar">true</item>
         <item name="android:windowAnimationStyle">@style/ScreenAnim</item>
+        <!-- Android 12+ splash: just the name in the serif, on the canvas (no icon). -->
+        <item name="android:windowSplashScreenBackground">@color/canvas</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_wordmark</item>
     </style>
 
     <style name="SheetDialog" parent="@android:style/Theme.Material.Light.Dialog.NoActionBar">
