@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 AppBlock is a small Android app-blocker: a foreground service polls the system
 usage-event log for the foreground app (via "Usage access") and draws a block
