@@ -35,7 +35,7 @@ import java.util.Calendar
  * Home. One of four states, top to bottom:
  *   setup incomplete  -> a checklist that fixes each permission in a tap
  *   nothing blocked   -> three quiet gray lines and a nudge to pick an app
- *   blocking          -> a status plate, then one progress card per app
+ *   blocking          -> the count, then one flat row per app
  * A floating "Block an app" pill is always within reach.
  */
 class MainActivity : Activity() {
@@ -74,8 +74,10 @@ class MainActivity : Activity() {
             background = GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 intArrayOf(canvas and 0x00FFFFFF, canvas, canvas))
-            addView(Ui.primaryButton(context, "Block an app", R.drawable.ic_plus) { onAddApp() },
-                Ui.lp(Ui.WRAP))
+            addView(Ui.primaryButton(context, "Block an app", R.drawable.ic_plus) { onAddApp() }.apply {
+                label.typeface = Ui.serif(context, italic = true)
+                label.textSize = 18f
+            }, Ui.lp(Ui.WRAP))
         }
         setContentView(FrameLayout(this).apply {
             addView(scroll, FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH))
@@ -133,13 +135,13 @@ class MainActivity : Activity() {
                     Storage.usedMs(Storage.loadIntervals(this, pkg), rule.windowMin, now) >=
                         rule.allowMin * 60_000L
                 }
-                put(statusCard(entries.size, spent), 24)
+                put(statusBlock(entries.size, spent), 28)
                 if (!notificationsEnabled() && !Storage.notifReminderDismissed(this)) {
                     put(notifReminder(), 12)
                 }
-                put(sectionTitle("Blocked apps", entries.size.toString()), 28)
+                put(sectionTitle("Blocked apps", entries.size.toString()), 36)
                 for (entry in entries) {
-                    put(appCard(entry.key, entry.value, today[entry.key] ?: 0L, now, animate), 10)
+                    put(appRow(entry.key, entry.value, today[entry.key] ?: 0L, now, animate))
                 }
             }
         }
@@ -148,8 +150,9 @@ class MainActivity : Activity() {
     private fun topBar() = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        addView(logoMark(34))
+        addView(logoMark(22))
         addView(Ui.display(context, "AppBlock", 19f).apply {
+            typeface = Ui.serif(context, italic = true)
             setPadding(Ui.dp(context, 10), 0, 0, 0)
         }, Ui.lp(0).apply { weight = 1f })
         addView(aboutButton())
@@ -176,21 +179,17 @@ class MainActivity : Activity() {
         Ui.press(this, 0.92f)
     }
 
-    private fun logoMark(sizeDp: Int) = FrameLayout(this).apply {
-        background = Ui.shape(context, R.color.ink, sizeDp * 0.3f)
-        addView(Ui.icon(context, R.drawable.ic_stat, (sizeDp * 0.62f).toInt(), R.color.on_ink).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                Ui.dp(context, (sizeDp * 0.62f).toInt()),
-                Ui.dp(context, (sizeDp * 0.62f).toInt()), Gravity.CENTER)
-        })
-        layoutParams = LinearLayout.LayoutParams(Ui.dp(context, sizeDp), Ui.dp(context, sizeDp))
-    }
+    /** The same ring glyph as before, with no plate behind it. */
+    private fun logoMark(sizeDp: Int) = Ui.icon(this, R.drawable.ic_stat, sizeDp, R.color.ink)
 
     private fun sectionTitle(title: String, count: String) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        addView(Ui.title(context, title, 18f), Ui.lp(0).apply { weight = 1f })
-        addView(Ui.muted(context, count, 14f))
+        addView(Ui.display(context, title, 22f).apply {
+            typeface = Ui.serif(context, italic = true)
+        }, Ui.lp(0).apply { weight = 1f })
+        addView(Ui.muted(context, count, 15f))
+        setPadding(0, 0, 0, Ui.dp(context, 14))
     }
 
     // ----------------------------------------------------------------- setup
@@ -249,7 +248,8 @@ class MainActivity : Activity() {
 
     // ----------------------------------------------------------- status/empty
 
-    private fun statusCard(count: Int, spent: Int): View {
+    /** The count, back in its plate: one box, lifted off the page. */
+    private fun statusBlock(count: Int, spent: Int): View {
         val inner = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             val p = Ui.dp(context, 22)
@@ -318,13 +318,14 @@ class MainActivity : Activity() {
         onFix = ::openNotificationSettings,
         onHideForever = { Storage.setNotifReminderDismissed(this) })
 
-    // ----------------------------------------------------------------- cards
+    // ------------------------------------------------------------------ list
 
     /**
-     * One card per blocked app: icon and name, a progress bar for how much of
-     * the allowance is spent, and the rule in words. Tap anywhere to edit.
+     * One row per blocked app, divided by a hairline: icon, name, how long
+     * until it's back, a slim bar, and the rule in words. The whole row
+     * edits the limit.
      */
-    private fun appCard(pkg: String, rule: Rule, todayMs: Long, now: Long, animate: Boolean): View {
+    private fun appRow(pkg: String, rule: Rule, todayMs: Long, now: Long, animate: Boolean): View {
         val usedMs = Storage.usedMs(Storage.loadIntervals(this, pkg), rule.windowMin, now)
         val usedMin = Storage.displayedUsedMin(usedMs, rule.allowMin)
         val allowMs = rule.allowMin * 60_000f
@@ -334,39 +335,41 @@ class MainActivity : Activity() {
 
         val status: View = if (isSpent) {
             val waitMin = Storage.ceilMin(Storage.msUntilUnblocked(this, pkg, rule))
-            Ui.txt(this, "Blocked, back in ${Storage.fmtSpan(waitMin.toInt())}", 14f, R.color.danger,
+            Ui.txt(this, "Blocked, back in ${Storage.fmtSpan(waitMin.toInt())}", 13f, R.color.danger,
                 medium = true)
-        } else Ui.muted(this, Storage.fmtToday(todayMs))
+        } else Ui.muted(this, Storage.fmtToday(todayMs), 13f)
 
-        val card = Ui.card(this, 24f).apply {
-            val p = Ui.dp(context, 16)
-            setPadding(p, p, p, p)
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            contentDescription = "Set limit for $name"
             isClickable = true
             isFocusable = true
             setOnClickListener { showLimitDialog(pkg, rule) }
             Ui.press(this, 0.98f)
 
+            addView(View(context).apply { setBackgroundColor(getColor(R.color.line)) },
+                LinearLayout.LayoutParams(Ui.MATCH, 1))
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                addView(Ui.appIcon(context, iconFor(pkg), 46))
+                setPadding(0, Ui.dp(context, 10), 0, Ui.dp(context, 10))
+                addView(Ui.appIcon(context, iconFor(pkg), 34))
                 addView(LinearLayout(context).apply {
                     orientation = LinearLayout.VERTICAL
-                    addView(Ui.title(context, name, 17f).apply { maxLines = 1 })
-                    addView(status, Ui.lp().apply { topMargin = Ui.dp(context, 3) })
-                }, Ui.lp(0).apply { weight = 1f; marginStart = Ui.dp(context, 14); marginEnd = Ui.dp(context, 8) })
-                addView(Ui.iconButton(context, R.drawable.ic_tune, "Set limit for $name", 42) {
-                    showLimitDialog(pkg, rule)
+                    addView(Ui.title(context, name, 15f).apply { maxLines = 1 })
+                    addView(status, Ui.lp().apply { topMargin = Ui.dp(context, 2) })
+                    addView(Ui.progressBar(context, fraction, animate),
+                        Ui.lp(Ui.MATCH, Ui.dp(context, 3)).apply { topMargin = Ui.dp(context, 7) })
+                    addView(Ui.muted(context,
+                        "${Storage.fmtSpan(rule.allowMin)} in any " +
+                            "${Storage.fmtSpan(rule.windowMin)} · $usedMin min used", 12f),
+                        Ui.lp().apply { topMargin = Ui.dp(context, 5) })
+                }, Ui.lp(0).apply { weight = 1f; marginStart = Ui.dp(context, 12) })
+                addView(Ui.icon(context, R.drawable.ic_chevron, 16, R.color.muted).apply {
+                    (layoutParams as LinearLayout.LayoutParams).marginStart = Ui.dp(context, 10)
                 })
             })
-            addView(Ui.progressBar(context, fraction, animate),
-                Ui.lp(Ui.MATCH, Ui.dp(context, 6)).apply { topMargin = Ui.dp(context, 16) })
-            addView(Ui.muted(context,
-                "${Storage.fmtSpan(rule.allowMin)} in any " +
-                    "${Storage.fmtSpan(rule.windowMin)} · $usedMin min used", 13f),
-                Ui.lp().apply { topMargin = Ui.dp(context, 10) })
         }
-        return card
     }
 
     // ----------------------------------------------------------- add / about

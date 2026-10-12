@@ -1,17 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="canvas">#0B0C0F</color>
-    <color name="surface">#15171B</color>
-    <color name="surface_alt">#20232A</color>
-    <color name="ink">#F3F4F6</color>
-    <color name="on_ink">#0B0C0F</color>
-    <color name="muted">#8E939E</color>
-    <color name="line">#23262C</color>
-    <color name="accent">#34C58A</color>
-    <color name="accent_soft">#12382B</color>
-    <color name="warn">#E5A23A</color>
-    <color name="warn_soft">#3A2D12</color>
-    <color name="danger">#EE6B70</color>
-    <color name="danger_soft">#3B1B1D</color>
-    <color name="scrim">#99000000</color>
+    <!-- Neutral charcoal. Surfaces, lines and type are shades of it, not a blue cast. -->
+    <color name="canvas">#18181A</color>
+    <color name="surface">#232326</color>
+    <color name="surface_alt">#2E2E32</color>
+    <color name="ink">#F5F2EA</color>
+    <color name="on_ink">#18181A</color>
+    <color name="muted">#A39E93</color>
+    <color name="line">#3A3A3E</color>
+    <color name="accent">#5ED6A0</color>
+    <color name="accent_soft">#1C332C</color>
+    <color name="warn">#E2A84A</color>
+    <color name="warn_soft">#3A301C</color>
+    <color name="danger">#F08B8F</color>
+    <color name="danger_soft">#3A2426</color>
+    <color name="scrim">#CC000000</color>
 </resources>

@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Cool silver canvas, white surfaces, near-black ink, one emerald accent. -->
-    <color name="canvas">#F2F3F5</color>
-    <color name="surface">#FFFFFF</color>
-    <color name="surface_alt">#E9EBEF</color>
-    <color name="ink">#0F1115</color>
-    <color name="on_ink">#F6F7F9</color>
-    <color name="muted">#686C76</color>
-    <color name="line">#E1E3E8</color>
-    <color name="accent">#12946A</color>
-    <color name="accent_soft">#DDF3EA</color>
-    <color name="warn">#D98A12</color>
-    <color name="warn_soft">#FBEFD6</color>
-    <color name="danger">#D6454B</color>
-    <color name="danger_soft">#FBE2E3</color>
-    <color name="scrim">#66000000</color>
+    <!-- Warm paper. Every step is a shade of that paper, so light mode is one material. -->
+    <color name="canvas">#F3EFE6</color>
+    <color name="surface">#FBF8F3</color>
+    <color name="surface_alt">#EFE6D6</color>
+    <color name="ink">#1C1915</color>
+    <color name="on_ink">#F7F4EE</color>
+    <color name="muted">#726B60</color>
+    <color name="line">#DDD4C4</color>
+    <color name="accent">#1A8F64</color>
+    <color name="accent_soft">#E3F2E9</color>
+    <color name="warn">#C4841A</color>
+    <color name="warn_soft">#F8EED9</color>
+    <color name="danger">#C4474C</color>
+    <color name="danger_soft">#F8E6E4</color>
+    <color name="scrim">#661C1915</color>
 </resources>
