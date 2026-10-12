@@ -21,6 +21,38 @@ Requirements:
 
   `adb` lives at `<sdk.dir>/platform-tools/adb` and may not be on `PATH`.
 
+First time in a clone, before the first commit (agents: do this yourself,
+don't wait to be asked; check with `git config core.hooksPath`):
+
+1. **Enable the pre-commit hook** — it runs the unit tests and blocks a
+   commit that breaks them. Git doesn't turn on in-repo hooks by itself:
+
+   ```sh
+   git config core.hooksPath .githooks
+   ```
+
+2. **Install the emulator** for the end-to-end tests (one-time SDK
+   download; `scripts/emulator.sh` creates the virtual device itself):
+
+   ```sh
+   sdkmanager "emulator" "system-images;android-34;google_apis;arm64-v8a"
+   ```
+
+   That's the Apple-silicon image; on an Intel machine use `x86_64` here
+   and in `scripts/emulator.sh`.
+
+3. **Run `scripts/e2e.sh` before pushing** any change to the app or its
+   tests. It's the same suite CI's `e2e` job runs on every push, so a red
+   suite here means a red CI. When a change renames or moves something the
+   e2e tests look for (button text, a dialog), update the tests in
+   `app/src/androidTest/` in the same commit.
+
+CI (`.github/workflows/ci.yml`) runs two jobs on every branch push: `test`
+(unit tests + compile) and `e2e` (the suite above on a fresh emulator). Check
+a push with `gh run list`; a failing e2e run uploads an `e2e-report`
+artifact with the HTML report, plus a screenshot and the device log for
+each failed test.
+
 Build:
 
 ```sh
