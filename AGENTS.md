@@ -6,6 +6,43 @@ wall over it ("Display over other apps") when a blocked app exceeds its time
 budget. No accessibility service.
 Plain Kotlin + Gradle, no Android Studio required.
 
+## Tests come with every change (read this first)
+
+A blocker that silently stops blocking is worse than none, and the tests are
+how we know it still works. A change without tests isn't finished.
+
+- **New or changed decision logic:** a pure function in `Storage.kt` with
+  JUnit tests in `app/src/test/`, edge cases included.
+- **New or changed screen or flow** (onboarding, sheets, the picker, the
+  wall, shortcuts): an end-to-end test in `app/src/androidTest/` that drives
+  it the way a user would.
+- **Bug fix:** a test that fails without the fix and passes with it.
+- **Changed something a test looks for** (text, a button, a dialog): update
+  that test in the same commit, still checking the same behaviour.
+- **Never make a test pass by weakening it:** no deleting tests, loosening
+  assertions, `@Ignore`, longer timeouts or sleeps to hide a problem. If a
+  test seems wrong, say why and ask.
+- **Never get around the checks:** no `git commit --no-verify`, no editing
+  `.githooks/` or `.github/workflows/` to turn things green.
+
+Done means all of these:
+
+1. `./gradlew testDebugUnitTest` passes (the pre-commit hook runs it).
+2. `scripts/e2e.sh` passes on the emulator. It's the suite CI runs.
+3. The new behaviour has its tests, as above.
+4. A user-visible change has been tried on the emulator or the phone.
+5. After pushing, CI is green (`gh run list`). Red CI on `main` comes before
+   anything else, and a release is only ever made from a commit with green CI.
+
+Ask the maintainer first, and say so in the commit message, before changing:
+
+- **The stored data format** (the rules and usage JSON in `Storage.kt`).
+  Users' rules live in it, and Android's Auto Backup restores it onto new
+  installs, so a changed format needs a migration with tests.
+- **`BlockerService.kt`'s detection and blocking**, `AndroidManifest.xml`
+  permissions, and the CI workflow, hooks, or `scripts/`.
+- **Release signing** (`keystore.properties` and the signing config).
+
 ## Setup
 
 Requirements:
@@ -25,7 +62,8 @@ First time in a clone, before the first commit (agents: do this yourself,
 don't wait to be asked; check with `git config core.hooksPath`):
 
 1. **Enable the pre-commit hook** — it runs the unit tests and blocks a
-   commit that breaks them. Git doesn't turn on in-repo hooks by itself:
+   commit that breaks them. Git doesn't turn on in-repo hooks by itself;
+   any Gradle build does it for you (`settings.gradle.kts`), or by hand:
 
    ```sh
    git config core.hooksPath .githooks
@@ -108,6 +146,8 @@ phone; set `ANDROID_SERIAL=emulator-5554` to point one at the emulator.
   UI Automator driving the real app (and the apps it blocks) on the
   emulator. `E2e.freshState()` resets the app before each test, and
   `seedUsage()` starts a test partway into a budget instead of waiting.
-  Wheel steps use shell taps (`device.click` is too long a press for them).
+  Cleanup that leaves the screen goes in an `E2e.Cleanup` rule ordered
+  before `E2e.ScreenshotOnFailure`, not an `@After`, so a failure's
+  screenshot shows the screen as it failed.
 - No build artifacts are committed: `*.apk`, `build/`, and `local.properties`
   are gitignored. Keep it that way.
