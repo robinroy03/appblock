@@ -57,27 +57,10 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      # A booted-emulator snapshot, so later runs skip the ~2 min cold boot.
-      - name: Cache the emulator
-        uses: actions/cache@v4
-        id: avd-cache
-        with:
-          path: |
-            ~/.android/avd/*
-            ~/.android/adb*
-          key: avd-34-google_apis-x86_64-pixel_7
-      - name: Create the emulator snapshot
-        if: steps.avd-cache.outputs.cache-hit != 'true'
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 34
-          target: google_apis
-          arch: x86_64
-          profile: pixel_7
-          force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          disable-animations: false
-          script: echo "Emulator snapshot created for the cache."
+      # A fresh emulator, cold-booted every run. No cached snapshot: booting
+      # one days old jumps the clock by days, and Android's usage-stats
+      # service can come out of that jump recording no app switches at all,
+      # so the blocker (which reads them) never sees the blocked app open.
       - name: Run the e2e tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -85,12 +68,11 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_7
-          force-avd-creation: false
-          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: ./gradlew connectedDebugAndroidTest
       # Which test failed and why (HTML report), plus a screenshot of the
-      # screen at the moment each failing test failed.
+      # screen at the moment each failing test failed and the device log.
       - name: Upload the e2e report
         if: failure()
         uses: actions/upload-artifact@v4
