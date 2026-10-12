@@ -6,8 +6,9 @@
 | ![AppBlock home screen](public/home.jpg) | ![Blocked screen](public/blocked.jpg) |
 | ---------------------------------------- | ------------------------------------- |
 
-Pick apps and give each a budget: **allow X minutes per rolling Y minutes**. When the budget
-is spent, opening the app bounces you to a "blocked, try again in N min" screen.
+Pick apps and give each a budget: **allow X in any rolling Y**, in minutes, hours or
+days (say, 10 min in any 2 hrs). When the budget is spent, opening the app bounces you
+to a "blocked, try again in N min" screen.
 
 No dependencies, no network, no analytics. Everything stays on your phone.
 

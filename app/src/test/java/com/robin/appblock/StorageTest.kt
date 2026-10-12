@@ -142,9 +142,9 @@ class StorageTest {
         assertTrue(all.contains("Unrestricted battery"))
         assertTrue(all.indexOf("Usage access") < all.indexOf("Display over other apps"))
         assertTrue(all.indexOf("Display over other apps") < all.indexOf("Unrestricted battery"))
-        // ...and the fix is pointed at the home-screen buttons, not a
-        // settings shortcut (the popup has only an OK button).
-        assertTrue(all.contains("home screen"))
+        // ...and the fix is pointed at the home-screen checklist, not a
+        // settings shortcut (the sheet has only an OK button).
+        assertTrue(all.contains("checklist on the home screen"))
         // Only battery missing -> the others aren't mentioned.
         val one = Storage.requirementsMessage(listOf(Storage.Requirement.BATTERY))
         assertTrue(one.contains("Unrestricted battery"))

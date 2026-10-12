@@ -380,10 +380,7 @@ class MainActivity : Activity() {
         // still missing; the checklist on the home screen fixes them.
         val missing = missingRequirements(this)
         if (missing.isNotEmpty()) {
-            Sheet.info(this, "Finish setting up first",
-                Storage.requirementsMessage(missing).replace(
-                    "The buttons on the home screen will get you set up.",
-                    "The checklist on the home screen will get you set up."))
+            Sheet.info(this, "Finish setting up first", Storage.requirementsMessage(missing))
             return
         }
         startActivity(Intent(this, AppPickerActivity::class.java))

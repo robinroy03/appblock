@@ -4,7 +4,7 @@
 
 This project was written entirely with AI. I don't know the codebase well enough to
 review your code, so I can't responsibly verify and merge PRs — especially for an app
-that holds accessibility access to my (and your) phone.
+that can see which apps you use and draw over them on my (and your) phone.
 
 What works instead: **open a good issue.** Bug reports, feature requests, UX
 complaints, edge cases you hit — all welcome. If the issue is clear and worth doing,
@@ -21,6 +21,7 @@ Thanks for understanding.
 
 ---
 
-*Maintainer note: after cloning, enable the test-running pre-commit hook once with
-`git config core.hooksPath .githooks`. CI runs the same tests on every push,
-plus the end-to-end tests on an emulator (`scripts/e2e.sh` runs those locally).*
+*Maintainer note: the first Gradle build in a clone turns on the test-running
+pre-commit hook (`core.hooksPath` = `.githooks`). CI runs the same tests on every
+push, plus the end-to-end tests on an emulator (`scripts/e2e.sh` runs those
+locally). See AGENTS.md for the full setup.*

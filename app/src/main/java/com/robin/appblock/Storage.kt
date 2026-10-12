@@ -141,7 +141,7 @@ object Storage {
      * Everything AppBlock can't work without, as data. Each entry carries its
      * own user-facing copy, and every surface generates itself from this
      * list: the home screen's "(required)" buttons with their why-blurbs, the
-     * "+ Block an app" guard popup, the About permissions rows. Declaration
+     * "Block an app" guard sheet, the About permissions rows. Declaration
      * order is fix-first priority (seeing the foreground app before drawing
      * over it — the core mechanism first). A future requirement is one entry
      * here plus a branch in requirementMet() (Perms.kt) and MainActivity's
@@ -184,13 +184,13 @@ object Storage {
     }
 
     /**
-     * Body of the "+ Block an app" guard popup, composed on the fly: one
-     * segment per missing requirement, so the popup always matches exactly
-     * what's off — one requirement or several, always a single popup.
+     * Body of the "Block an app" guard sheet, composed on the fly: one
+     * segment per missing requirement, so the sheet always matches exactly
+     * what's off — one requirement or several, always a single sheet.
      */
     fun requirementsMessage(missing: List<Requirement>): String =
         missing.joinToString("\n\n") { "${it.title}: ${it.why}" } +
-            "\n\nThe buttons on the home screen will get you set up."
+            "\n\nThe checklist on the home screen will get you set up."
 
     /**
      * A span in words, for the home list, the limit dialog and the block

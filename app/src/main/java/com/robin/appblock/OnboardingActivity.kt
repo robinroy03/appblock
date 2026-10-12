@@ -256,8 +256,10 @@ class OnboardingActivity : Activity() {
         intros[3] = { Ui.pop(hero.getChildAt(0)) }
         return page(
             hero, "The promise", "Private, and easy to leave.",
-            "Next you'll grant two permissions, Usage access to see which app is " +
-                "open and Display over other apps to draw the wall. Nothing else."
+            "Next you'll turn on three settings: Usage access to see which app is " +
+                "open, Display over other apps to draw the wall, and Unrestricted " +
+                "battery so Android doesn't stop the blocker. Notifications are " +
+                "optional, for the warnings."
         )
     }
 
