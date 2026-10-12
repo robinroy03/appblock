@@ -40,7 +40,10 @@ scripts/fresh-install.sh   # same build, but uninstall first: wipes all app stat
 Both handle JDK 17 and the adb path (via `scripts/env.sh`) themselves. Use
 `deploy.sh` after every change; `fresh-install.sh` only when the fresh-install
 experience itself is being tested — it deletes the user's rules and the
-permission grants.
+permission grants. A bare uninstall + install is not enough: Android's Auto
+Backup restores the old rules on install, so the script turns restore off
+for its install (`bmgr autorestore`). The phone also refuses
+`adb shell pm clear` (OxygenOS), so reinstalling is the only way to wipe.
 
 Install via `adb`, not by copying the APK to the phone — adb installs skip
 Google Play Protect's block. One-time phone setup: enable Developer options and
