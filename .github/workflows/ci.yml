@@ -1,9 +1,10 @@
 name: CI
 
 # Branch pushes only: a bare `push:` also fires on tags, so publishing a
-# release re-ran CI on a commit that had already passed. Docs-only changes
+# release re-ran CI on a commit that had already passed. Docs-only pushes
 # (README, screenshots, licence, issue templates) can't break the app, so
-# they don't run CI at all.
+# they skip CI. Pull requests always run it: main requires these checks to
+# pass before a PR merges, and a skipped run would leave the PR waiting.
 on:
   push:
     branches: ["**"]
@@ -13,11 +14,6 @@ on:
       - "LICENSE"
       - ".github/ISSUE_TEMPLATE/**"
   pull_request:
-    paths-ignore:
-      - "**.md"
-      - "public/**"
-      - "LICENSE"
-      - ".github/ISSUE_TEMPLATE/**"
 
 # A newer push to the same branch cancels the run it makes outdated.
 concurrency:
