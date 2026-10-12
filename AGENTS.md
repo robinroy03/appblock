@@ -6,7 +6,7 @@ wall over it ("Display over other apps") when a blocked app exceeds its time
 budget. No accessibility service.
 Plain Kotlin + Gradle, no Android Studio required.
 
-## Tests come with every change (read this first)
+## Tests come with every change
 
 A blocker that silently stops blocking is worse than none, and the tests are
 how we know it still works. A change without tests isn't finished.
