@@ -20,7 +20,6 @@ import com.robin.appblock.E2e.shell
 import com.robin.appblock.E2e.text
 import com.robin.appblock.E2e.textContains
 import com.robin.appblock.E2e.waitFor
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -35,16 +34,17 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class HomeE2eTest {
 
-    @get:Rule
-    val screenshotOnFailure = E2e.ScreenshotOnFailure()
-
-    @After
-    fun leave() {
+    // Cleanup is the outer rule, so a failure's screenshot is taken first.
+    @get:Rule(order = 0)
+    val leave = E2e.Cleanup {
         device.findObject(text("Go to home screen"))?.click()
         // A test failing mid-way must not leave usage access off for the next one.
         shell("appops set ${ctx.packageName} GET_USAGE_STATS allow")
         device.pressHome()
     }
+
+    @get:Rule(order = 1)
+    val screenshotOnFailure = E2e.ScreenshotOnFailure()
 
     private fun openLimitDialog(label: String) {
         waitFor(By.desc("Set limit for $label")).click()

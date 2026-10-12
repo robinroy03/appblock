@@ -23,6 +23,7 @@ import android.provider.Settings
 import android.text.SpannableString
 import android.text.style.AbsoluteSizeSpan
 import android.text.style.ForegroundColorSpan
+import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.FrameLayout
@@ -103,6 +104,7 @@ class BlockerService : Service() {
         val (id, notif) = shown ?: (NOTIF_SERVICE to onDutyNotification())
         show(id, notif)
         if (getSystemService(PowerManager::class.java).isInteractive) startPolling()
+        else Log.d(TAG, "screen off: not polling yet")
         return START_STICKY
     }
 
@@ -139,7 +141,10 @@ class BlockerService : Service() {
             } else {
                 startForeground(id, notif)
             }
-        } catch (e: Exception) { return }  // refused: keep whatever is up rather than crash
+        } catch (e: Exception) {  // refused: keep whatever is up rather than crash
+            Log.w(TAG, "notification $id refused", e)
+            return
+        }
         shown = id to notif
         if (previous != null && previous != id) {
             getSystemService(NotificationManager::class.java).cancel(previous)
@@ -149,11 +154,13 @@ class BlockerService : Service() {
     private fun startPolling() {
         if (polling) return
         polling = true
+        Log.d(TAG, "polling started")
         handler.post(poll)
     }
 
     private fun stopPolling() {
         polling = false
+        Log.d(TAG, "polling stopped")
         handler.removeCallbacks(poll)
         endSession()
         foreground = null
@@ -167,7 +174,9 @@ class BlockerService : Service() {
             // nothing to see there's nothing to enforce. Keep polling, so
             // blocking picks up again by itself once access is back.
             val events = try { readEvents(now - lookbackMs, now) } catch (e: SecurityException) { null }
-            foreground = if (events == null) null else Storage.foregroundFrom(events, foreground)
+            val front = if (events == null) null else Storage.foregroundFrom(events, foreground)
+            if (front != foreground) Log.d(TAG, "foreground: $front")
+            foreground = front
             lookbackMs = 2 * pollMs
             onForeground(foreground)
             if (polling) handler.postDelayed(this, pollMs)
@@ -323,7 +332,11 @@ class BlockerService : Service() {
         if (overlay != null) return
         // Permission revoked since setup: addView would throw. The home
         // screen shows the missing requirement; nothing to do here.
-        if (!Settings.canDrawOverlays(this)) return
+        if (!Settings.canDrawOverlays(this)) {
+            Log.w(TAG, "can't block $pkg: no display-over-apps permission")
+            return
+        }
+        Log.i(TAG, "blocking $pkg")
         val waitMin = Storage.ceilMin(Storage.msUntilUnblocked(this, pkg, rule))
         val label = labelFor(pkg)
 
@@ -398,7 +411,10 @@ class BlockerService : Service() {
             PixelFormat.OPAQUE)
         try {
             (getSystemService(WINDOW_SERVICE) as WindowManager).addView(wall, lp)
-        } catch (e: Exception) { return }
+        } catch (e: Exception) {
+            Log.w(TAG, "couldn't draw the wall over $pkg", e)
+            return
+        }
         overlay = wall
         overlayPkg = pkg
     }
@@ -418,6 +434,7 @@ class BlockerService : Service() {
     }
 
     companion object {
+        private const val TAG = "BlockerService"
         private const val CHANNEL_SERVICE = "service"
         private const val CHANNEL_TIMER = "timer"
         private const val NOTIF_SERVICE = 1

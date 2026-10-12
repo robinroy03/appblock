@@ -14,7 +14,6 @@ import com.robin.appblock.E2e.seedUsage
 import com.robin.appblock.E2e.text
 import com.robin.appblock.E2e.textContains
 import com.robin.appblock.E2e.waitFor
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -30,16 +29,17 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class BlockingE2eTest {
 
-    @get:Rule
-    val screenshotOnFailure = E2e.ScreenshotOnFailure()
-
-    private val wall = textContains("Clock is blocked")
-
-    @After
-    fun leave() {
+    // Cleanup is the outer rule, so a failure's screenshot is taken first.
+    @get:Rule(order = 0)
+    val leave = E2e.Cleanup {
         device.findObject(text("Go to home screen"))?.click()
         device.pressHome()
     }
+
+    @get:Rule(order = 1)
+    val screenshotOnFailure = E2e.ScreenshotOnFailure()
+
+    private val wall = textContains("Clock is blocked")
 
     @Test
     fun spentBudget_wallCoversTheApp_andSendsYouHome() {

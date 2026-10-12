@@ -2,6 +2,7 @@ package com.robin.appblock
 
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import android.widget.EditText
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -9,6 +10,7 @@ import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
+import org.junit.rules.ExternalResource
 import org.junit.rules.TestWatcher
 import org.junit.runner.Description
 import java.util.regex.Pattern
@@ -118,17 +120,30 @@ object E2e {
 
     /**
      * JUnit rule: a failing test leaves a screenshot of the screen as it
-     * was, like Playwright's. Gradle pulls it into
+     * was, like Playwright's, and the device log beside it (the blocker
+     * service's state is logged into it first). Gradle pulls both into
      * app/build/outputs/connected_android_test_additional_output/, and CI
-     * uploads it with the report.
+     * uploads them with the report.
+     *
+     * Cleanup that leaves the screen (pressing Home) must not be an @After:
+     * JUnit runs those before any rule sees the failure, so the screenshot
+     * would show the launcher. Use [Cleanup] ordered outside this rule.
      */
     class ScreenshotOnFailure : TestWatcher() {
         override fun failed(e: Throwable?, description: Description) {
             val dir = InstrumentationRegistry.getArguments().getString("additionalTestOutputDir") ?: return
-            val name = "${description.testClass.simpleName}.${description.methodName}.png"
+            val name = "${description.testClass.simpleName}.${description.methodName}"
             // From the shell: it can write the output directory, the app can't.
             shell("mkdir -p $dir")
-            shell("screencap -p $dir/$name")
+            shell("screencap -p $dir/$name.png")
+            shell("dumpsys activity services ${ctx.packageName}").lines()
+                .forEach { Log.i("E2eFailure", it) }
+            shell("logcat -d -v time -f $dir/$name.logcat.txt")
         }
+    }
+
+    /** JUnit rule: `block` runs after each test, after [ScreenshotOnFailure] (give it a lower `order`). */
+    class Cleanup(private val block: () -> Unit) : ExternalResource() {
+        override fun after() = block()
     }
 }
