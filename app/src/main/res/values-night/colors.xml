@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="canvas">#0B0C0F</color>
+    <color name="surface">#15171B</color>
+    <color name="surface_alt">#20232A</color>
+    <color name="ink">#F3F4F6</color>
+    <color name="on_ink">#0B0C0F</color>
+    <color name="muted">#8E939E</color>
+    <color name="line">#23262C</color>
+    <color name="accent">#34C58A</color>
+    <color name="accent_soft">#12382B</color>
+    <color name="warn">#E5A23A</color>
+    <color name="warn_soft">#3A2D12</color>
+    <color name="danger">#EE6B70</color>
+    <color name="danger_soft">#3B1B1D</color>
+    <color name="scrim">#99000000</color>
+</resources>

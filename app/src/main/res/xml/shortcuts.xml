@@ -5,7 +5,7 @@
     <shortcut
         android:shortcutId="dont_give_up"
         android:enabled="true"
-        android:icon="@android:drawable/btn_star_big_on"
+        android:icon="@drawable/ic_shortcut"
         android:shortcutShortLabel="@string/shortcut_dont_give_up">
         <intent
             android:action="android.intent.action.VIEW"

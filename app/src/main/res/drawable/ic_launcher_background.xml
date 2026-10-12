@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <vector
+            android:width="108dp" android:height="108dp"
+            android:viewportWidth="108" android:viewportHeight="108">
+            <path android:pathData="M0,0h108v108h-108z">
+                <aapt:attr name="android:fillColor" xmlns:aapt="http://schemas.android.com/aapt">
+                    <gradient
+                        android:startX="14" android:startY="0"
+                        android:endX="94" android:endY="108"
+                        android:type="linear">
+                        <item android:offset="0" android:color="#FF1C2622" />
+                        <item android:offset="0.55" android:color="#FF0C100E" />
+                        <item android:offset="1" android:color="#FF050706" />
+                    </gradient>
+                </aapt:attr>
+            </path>
+            <!-- A soft mint glow low on the left, like light on the ring's tail. -->
+            <path android:pathData="M0,0h108v108h-108z">
+                <aapt:attr name="android:fillColor" xmlns:aapt="http://schemas.android.com/aapt">
+                    <gradient
+                        android:centerX="30" android:centerY="86"
+                        android:gradientRadius="72"
+                        android:type="radial">
+                        <item android:offset="0" android:color="#2E3DDC9A" />
+                        <item android:offset="1" android:color="#003DDC9A" />
+                    </gradient>
+                </aapt:attr>
+            </path>
+        </vector>
+    </item>
+</layer-list>

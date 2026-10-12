@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Strong ease-out: fast off the line, long soft landing. -->
+<pathInterpolator xmlns:android="http://schemas.android.com/apk/res/android"
+    android:controlX1="0.23"
+    android:controlY1="1"
+    android:controlX2="0.32"
+    android:controlY2="1" />

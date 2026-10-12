@@ -10,19 +10,16 @@ import com.robin.appblock.E2e.appears
 import com.robin.appblock.E2e.ctx
 import com.robin.appblock.E2e.device
 import com.robin.appblock.E2e.freshState
+import com.robin.appblock.E2e.limitFields
 import com.robin.appblock.E2e.min
 import com.robin.appblock.E2e.openApp
 import com.robin.appblock.E2e.openHome
 import com.robin.appblock.E2e.pressOk
 import com.robin.appblock.E2e.seedUsage
-import com.robin.appblock.E2e.selected
 import com.robin.appblock.E2e.shell
-import com.robin.appblock.E2e.step
 import com.robin.appblock.E2e.text
 import com.robin.appblock.E2e.textContains
-import com.robin.appblock.E2e.turnTo
 import com.robin.appblock.E2e.waitFor
-import com.robin.appblock.E2e.wheels
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -55,14 +52,15 @@ class HomeE2eTest {
     }
 
     @Test
-    fun wheelsSetTheLimit_homeShowsIt_andTheBlockerEnforcesIt() {
+    fun typedLimit_isSaved_homeShowsIt_andTheBlockerEnforcesIt() {
         freshState(mapOf(CLOCK to Rule(allowMin = 5, windowMin = 120)))
         openHome()
         openLimitDialog("Clock")
 
-        val (allow, window) = wheels()
-        allow.turnTo("10 min", up = false)
-        window.turnTo("1 hr", up = true)
+        // Allow is in minutes, "in any" opens in hours (120 min = 2 hrs).
+        val (allow, window) = limitFields()
+        allow.text = "10"
+        window.text = "1"
         pressOk()
 
         waitFor(text("10 min in any 1 hr · 0 min used"))
@@ -77,37 +75,54 @@ class HomeE2eTest {
     }
 
     @Test
-    fun allowWheel_neverOffersAnAllowanceAsLongAsTheWindow() {
-        freshState(mapOf(CLOCK to Rule(allowMin = 30, windowMin = 120)))
-        openHome()
-        openLimitDialog("Clock")
-
-        val (allow, window) = wheels()
-        window.turnTo("15 min", up = true)
-        // 30 min no longer fits a 15-min window: the wheel dropped to the largest that does.
-        assertEquals("10 min", allow.selected())
-        allow.step()   // try to go past it
-        assertEquals("10 min", allow.selected())
-        pressOk()
-
-        waitFor(text("10 min in any 15 min · 0 min used"))
-    }
-
-    @Test
-    fun typedLimit_okOnlyForAValidRule() {
+    fun steppersAndUnits_changeTheLimit() {
         freshState(mapOf(CLOCK to Rule(allowMin = 5, windowMin = 120)))
         openHome()
         openLimitDialog("Clock")
-        waitFor(text("Type exact times")).click()
 
-        val (allowField, hours, minutes) = device.findObjects(By.clazz(EditText::class.java))
-            .sortedBy { it.visibleBounds.left }
-        hours.text = "1"
-        minutes.text = "0"
-        allowField.text = "60"   // as long as the window: would never block
+        waitFor(By.desc("Allow: more")).click()      // 5 -> 6 min
+        waitFor(By.desc("In any: less")).click()     // 2 -> 1 hr
+        waitFor(text("6 min in any 1 hr"))           // the live summary follows
+        pressOk()
+
+        waitFor(text("6 min in any 1 hr · 0 min used"))
+        assertEquals(Rule(6, 60), Storage.loadRules(ctx)[CLOCK])
+
+        // Switching the window's unit keeps the number: 1 hr -> 1 day.
+        openLimitDialog("Clock")
+        waitFor(text("day")).click()
+        pressOk()
+
+        waitFor(text("6 min in any 1 day · 0 min used"))
+        assertEquals(Rule(6, 1440), Storage.loadRules(ctx)[CLOCK])
+    }
+
+    @Test
+    fun quickPick_fillsBothSides() {
+        freshState(mapOf(CLOCK to Rule(allowMin = 5, windowMin = 120)))
+        openHome()
+        openLimitDialog("Clock")
+
+        waitFor(text("30 min in 4 hrs")).click()
+        pressOk()
+
+        waitFor(text("30 min in any 4 hrs · 0 min used"))
+        assertEquals(Rule(30, 240), Storage.loadRules(ctx)[CLOCK])
+    }
+
+    @Test
+    fun allowanceAsLongAsTheWindow_isRefused_untilItFits() {
+        freshState(mapOf(CLOCK to Rule(allowMin = 5, windowMin = 120)))
+        openHome()
+        openLimitDialog("Clock")
+
+        val (allow, window) = limitFields()
+        window.text = "1"          // 1 hr
+        allow.text = "60"         // as long as the window: would never block
         assertFalse(waitFor(text("OK")).isEnabled)
+        waitFor(textContains("shorter than the window"))
 
-        allowField.text = "59"
+        allow.text = "59"
         assertTrue(device.wait(Until.hasObject(text("OK").enabled(true)), E2e.WAIT))
         pressOk()
 
@@ -121,7 +136,7 @@ class HomeE2eTest {
         openHome()
         openLimitDialog("Clock")
 
-        wheels()[0].turnTo("20 min", up = false)
+        limitFields()[0].text = "20"
         waitFor(text("Cancel")).click()
 
         waitFor(text("5 min in any 2 hrs · 0 min used"))
@@ -147,7 +162,7 @@ class HomeE2eTest {
         freshState()
         openHome()
 
-        waitFor(text("+ Block an app")).click()
+        waitFor(text("Block an app")).click()
         waitFor(By.clazz(EditText::class.java)).text = "Clock"   // the search box
         waitFor(text("Clock").clazz(TextView::class.java)).click()   // the row, not the search box
         waitFor(text("Block 1 selected app")).click()

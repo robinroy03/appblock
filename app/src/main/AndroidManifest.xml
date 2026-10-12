@@ -31,7 +31,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
-    <!-- The tick as the limit dialog's scroll wheels turn -->
+    <!-- The tick as the limit dialog's steppers change -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- Restart the blocker after a reboot -->
@@ -47,7 +47,8 @@
 
     <application
         android:label="AppBlock"
-        android:icon="@android:drawable/ic_lock_lock"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/AppTheme">
 
         <activity

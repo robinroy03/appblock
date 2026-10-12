@@ -270,17 +270,6 @@ class StorageTest {
     }
 
     @Test
-    fun `wheel choices - a standard value keeps the standard stops`() {
-        assertEquals(Storage.ALLOW_CHOICES, Storage.wheelChoices(Storage.ALLOW_CHOICES, 5))
-    }
-
-    @Test
-    fun `wheel choices - an odd old value is slotted in order`() {
-        assertEquals(listOf(1, 5, 7, 10), Storage.wheelChoices(listOf(1, 5, 10), 7))
-        assertEquals(listOf(15, 30, 2000), Storage.wheelChoices(listOf(15, 30), 2000))
-    }
-
-    @Test
     fun `valid rule - some allowance, shorter than the window`() {
         assertTrue(Storage.validRule(Rule(5, 120)))
         assertTrue(Storage.validRule(Rule(360, 10080)))    // 6 hrs in any week
@@ -290,45 +279,80 @@ class StorageTest {
     }
 
     @Test
-    fun `exact rule - hours and minutes add up, blanks count as zero`() {
-        assertEquals(Rule(6, 94), Storage.exactRule("6", "1", "34"))
-        assertEquals(Rule(6, 94), Storage.exactRule(" 6 ", "", "94"))
-        assertEquals(Rule(5, 120), Storage.exactRule("5", "2", ""))
-        assertEquals(Rule(360, 10080), Storage.exactRule("360", "168", "0"))   // 6 hrs in any week
+    fun `presets - every one is a valid rule`() {
+        assertTrue(Storage.PRESETS.all(Storage::validRule))
     }
 
     @Test
-    fun `exact rule - nonsense is rejected`() {
-        assertEquals(null, Storage.exactRule("", "2", "0"))      // no allowance
-        assertEquals(null, Storage.exactRule("0", "2", "0"))
-        assertEquals(null, Storage.exactRule("120", "2", "0"))   // allowance = window
-        assertEquals(null, Storage.exactRule("5", "", ""))       // no window
-        assertEquals(null, Storage.exactRule("5", "99999999999", "0"))   // too big to store
+    fun `limit unit - the largest unit that divides evenly`() {
+        val all = Storage.SpanUnit.entries
+        assertEquals(Storage.SpanUnit.HR, Storage.unitFor(120, all))
+        assertEquals(Storage.SpanUnit.MIN, Storage.unitFor(90, all))
+        assertEquals(Storage.SpanUnit.DAY, Storage.unitFor(1440, all))
+        assertEquals(Storage.SpanUnit.DAY, Storage.unitFor(10080, all))
+        assertEquals(Storage.SpanUnit.MIN, Storage.unitFor(60, listOf(Storage.SpanUnit.MIN)))
+        assertEquals(Storage.SpanUnit.HR, Storage.unitFor(60, listOf(Storage.SpanUnit.MIN, Storage.SpanUnit.HR)))
     }
 
     @Test
-    fun `allow stops - only allowances shorter than the window`() {
-        assertEquals(listOf(1, 2, 3, 4, 5, 10), Storage.allowStops(15, 5))
-        assertEquals(listOf(1, 2, 3, 4, 5, 7, 10), Storage.allowStops(15, 7))   // odd old value kept
-        assertEquals(Storage.ALLOW_CHOICES, Storage.allowStops(10080, 5))
-        assertEquals(listOf(1), Storage.allowStops(1, 5))                      // never empty
+    fun `limit amounts - digits only, 1 up to the cap`() {
+        assertEquals(5, Storage.parseAmount(" 5 "))
+        assertEquals(null, Storage.parseAmount(""))
+        assertEquals(null, Storage.parseAmount("0"))
+        assertEquals(null, Storage.parseAmount("-3"))
+        assertEquals(null, Storage.parseAmount("1.5"))
+        assertEquals(null, Storage.parseAmount("99999999999"))
     }
 
     @Test
-    fun `allow wheel - keeps its value, or drops to the largest that still fits`() {
-        assertEquals(5, Storage.keepStop(listOf(1, 2, 5, 10), 5))
-        assertEquals(10, Storage.keepStop(listOf(1, 2, 5, 10), 45))   // window shrank under it
-        assertEquals(1, Storage.keepStop(listOf(1, 2), 0))
+    fun `limit rule - each side is a number and a unit`() {
+        val (min, hr, day) = Storage.SpanUnit.entries
+        assertEquals(Rule(5, 120), Storage.limitRule("5", min, "2", hr))
+        assertEquals(Rule(90, 1440), Storage.limitRule("90", min, "1", day))
+        assertEquals(Rule(360, 10080), Storage.limitRule("6", hr, "7", day))   // 6 hrs in any week
+        assertEquals(Rule(59, 60), Storage.limitRule(" 59 ", min, "60", min))
     }
 
     @Test
-    fun `exact allow error - flags only complete nonsense`() {
-        assertEquals(null, Storage.exactAllowError("6", "1", "34"))
-        assertEquals(null, Storage.exactAllowError("", "1", "34"))       // still typing
-        assertEquals(null, Storage.exactAllowError("6", "", ""))         // window not typed yet
-        assertEquals("At least 1 min", Storage.exactAllowError("0", "1", "0"))
-        assertEquals("Has to be shorter than the window", Storage.exactAllowError("60", "1", "0"))
-        assertEquals("Has to be shorter than the window", Storage.exactAllowError("90", "1", "0"))
+    fun `limit rule - nonsense is rejected`() {
+        val (min, hr, _) = Storage.SpanUnit.entries
+        assertEquals(null, Storage.limitRule("", min, "2", hr))      // no allowance
+        assertEquals(null, Storage.limitRule("0", min, "2", hr))
+        assertEquals(null, Storage.limitRule("5", min, "", hr))      // no window
+        assertEquals(null, Storage.limitRule("120", min, "2", hr))   // allowance = window
+        assertEquals(null, Storage.limitRule("3", hr, "2", hr))      // allowance > window
+    }
+
+    @Test
+    fun `limit error - flags only a complete rule that can't block`() {
+        val (min, hr, _) = Storage.SpanUnit.entries
+        assertEquals(null, Storage.limitError("5", min, "2", hr))
+        assertEquals(null, Storage.limitError("", min, "2", hr))     // still typing
+        assertEquals(null, Storage.limitError("5", min, "", hr))     // window not typed yet
+        assertEquals("The allowance has to be shorter than the window.",
+            Storage.limitError("120", min, "2", hr))
+        assertEquals("The allowance has to be shorter than the window.",
+            Storage.limitError("3", hr, "2", hr))
+    }
+
+    @Test
+    fun `stepper - minutes go by ones, then by fives landing on fives`() {
+        val min = Storage.SpanUnit.MIN
+        assertEquals(6, Storage.stepAmount(5, min, up = true))
+        assertEquals(10, Storage.stepAmount(9, min, up = true))
+        assertEquals(15, Storage.stepAmount(10, min, up = true))
+        assertEquals(15, Storage.stepAmount(12, min, up = true))
+        assertEquals(9, Storage.stepAmount(10, min, up = false))
+        assertEquals(10, Storage.stepAmount(15, min, up = false))
+        assertEquals(10, Storage.stepAmount(12, min, up = false))
+        assertEquals(1, Storage.stepAmount(1, min, up = false))      // never below 1
+    }
+
+    @Test
+    fun `stepper - hours and days go by one`() {
+        assertEquals(13, Storage.stepAmount(12, Storage.SpanUnit.HR, up = true))
+        assertEquals(1, Storage.stepAmount(2, Storage.SpanUnit.DAY, up = false))
+        assertEquals(1, Storage.stepAmount(1, Storage.SpanUnit.HR, up = false))
     }
 
     @Test

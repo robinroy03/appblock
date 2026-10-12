@@ -1,12 +1,12 @@
 package com.robin.appblock
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.app.NotificationManager
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.VibrationAttributes
@@ -18,33 +18,34 @@ import android.text.Html
 import android.text.InputType
 import android.text.TextWatcher
 import android.text.method.LinkMovementMethod
-import android.util.TypedValue
 import android.view.Gravity
-import android.view.Menu
-import android.view.MenuItem
+import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.InputMethodManager
-import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.NumberPicker
 import android.widget.ScrollView
 import android.widget.TextView
 import java.util.Calendar
 
 /**
- * Home screen: the list of currently blocked apps, each showing today's
- * screen time and its limit, with an hourglass that opens the limit wheels,
- * plus a button to pick more apps to block.
+ * Home. One of four states, top to bottom:
+ *   setup incomplete  -> a checklist that fixes each permission in a tap
+ *   nothing blocked   -> three quiet gray lines and a nudge to pick an app
+ *   blocking          -> a status plate, then one progress card per app
+ * A floating "Block an app" pill is always within reach.
  */
 class MainActivity : Activity() {
 
-    // One "(required)" button + why-blurb per Storage.Requirement, generated
-    // from the enum: a future requirement shows up here with no extra wiring.
-    private val reqViews = mutableMapOf<Storage.Requirement, List<View>>()
-    private lateinit var notifReminder: LinearLayout
-    private lateinit var list: LinearLayout
+    private lateinit var content: LinearLayout
+    private var firstRender = true
+
+    // Lets onResume refresh the permissions sheet's On/Off chips while it's
+    // open, so fixing a setting and coming back shows it without reopening.
+    private var refreshPermRows: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,175 +54,427 @@ class MainActivity : Activity() {
             startActivity(Intent(this, OnboardingActivity::class.java))
         }
 
-        // Ask nicely: each required setting gets its button plus a "Why …?"
-        // blurb right under it saying what it's for. Granted ones disappear
-        // (in onResume), so whatever's left naturally moves to the top.
-        for (req in Storage.Requirement.entries) {
-            val button = Button(this).apply {
-                text = req.button
-                setOnClickListener { requirementFix(req) }
-            }
-            val blurb = TextView(this).apply {
-                text = "Why ${req.whyWord}? ${req.why}"
-                textSize = 13f
-                alpha = 0.7f
-                setPadding(16, 0, 16, 16)
-            }
-            reqViews[req] = listOf(button, blurb)
-        }
-        val addButton = Button(this).apply {
-            text = "+ Block an app"
-            setOnClickListener {
-                // Blocking only works with every required setting on; adding
-                // apps before then would silently do nothing. One popup names
-                // everything still missing; the home-screen buttons fix them.
-                val missing = missingRequirements()
-                if (missing.isNotEmpty()) {
-                    AlertDialog.Builder(this@MainActivity)
-                        .setIcon(android.R.drawable.ic_dialog_info)
-                        .setTitle("Finish setting up first")
-                        .setMessage(Storage.requirementsMessage(missing))
-                        .setPositiveButton("OK", null)
-                        .show()
-                    return@setOnClickListener
-                }
-                startActivity(Intent(this@MainActivity, AppPickerActivity::class.java))
-            }
-        }
-        // Info card shown while notifications are off (unless permanently ✕-ed).
-        notifReminder = ReminderCard.make(
-            this,
-            message = "Notifications are off, so AppBlock can't warn you " +
-                "when you're close to using up an app's allowance. " +
-                "Tap to turn them on.",
-            confirmTitle = "Skip usage warnings?",
-            confirmBody = "Without notifications, AppBlock can't let you know " +
-                "when you're about to use up an app's allowance. The first " +
-                "you'll hear of it is the block wall.\n\nHide this reminder " +
-                "anyway? (You can still enable notifications later from the " +
-                "About page.)",
-            onFix = ::openNotificationSettings,
-            onHideForever = { Storage.setNotifReminderDismissed(this) })
-        list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-
-        val root = LinearLayout(this).apply {
+        val side = Ui.dp(this, 20)
+        content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(32, 32, 32, 32)
-            for (views in reqViews.values) for (v in views) addView(v)
-            addView(notifReminder, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = 12; bottomMargin = 12 })
-            addView(addButton)
-            addView(list)
+            setPadding(side, Ui.dp(context, 12), side, Ui.dp(context, 132))
         }
-        setContentView(ScrollView(this).apply { addView(root) })
-    }
+        val scroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            isFillViewport = true   // lets the footer sit at the bottom on short pages
+            addView(content)
+        }
 
-    // (i) icon in the top-right of the action bar -> About dialog.
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menu.add("About").apply {
-            setIcon(android.R.drawable.ic_menu_info_details)
-            setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-            setOnMenuItemClickListener { showAbout(); true }
+        // Floating action: fades into the page so rows scroll under it softly.
+        val canvas = getColor(R.color.canvas)
+        val bar = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(side, Ui.dp(context, 36), side, Ui.dp(context, 20))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(canvas and 0x00FFFFFF, canvas, canvas))
+            addView(Ui.primaryButton(context, "Block an app", R.drawable.ic_plus) { onAddApp() },
+                Ui.lp(Ui.WRAP))
         }
-        return true
-    }
-
-    private fun showAbout() {
-        val version = try {
-            packageManager.getPackageInfo(packageName, 0).versionName
-        } catch (e: Exception) { "unknown" }
-        val message = TextView(this).apply {
-            text = Html.fromHtml(
-                "One morning I woke up at 5am and scrolled Instagram, X and " +
-                "YouTube for an hour straight. My entire daily quota, gone " +
-                "before sunrise :) That's when it clicked: daily limits fail " +
-                "because one binge empties them, and then you override. " +
-                "AppBlock gives you a small allowance every time window " +
-                "instead. Enough to check in, never enough to binge." +
-                "<br><br>This app is " +
-                "<a href=\"https://github.com/robinroy03/appblock\">open sourced</a>" +
-                " under MIT license." +
-                "<br><br>Feedback? Please email me " +
-                "<a href=\"mailto:robinroy.work@gmail.com\">here</a>" +
-                "<br><br>Made with ❤️ by <a href=\"https://x.com/_RobinRoy\">robin</a>" +
-                "<br><br>Version $version",
-                Html.FROM_HTML_MODE_LEGACY)
-            movementMethod = LinkMovementMethod.getInstance()
-            textSize = 16f
-            setPadding(48, 32, 48, 16)
-        }
-        // Always-available path to the permissions checklist: the amber alert
-        // while something is off (no ✕, it goes away by being fixed), a calm
-        // "review" link once everything is on.
-        val allGood = allRequirementsMet(this) && notificationsEnabled()
-        val permsAlert = ReminderCard.make(
-            this,
-            message = "Some permissions are not enabled. Tap to review and " +
-                "fix them.",
-            onFix = ::showPermissionsDialog)
-        permsAlert.visibility = if (allGood) View.GONE else View.VISIBLE
-        val reviewLink = TextView(this).apply {
-            text = Html.fromHtml("<u>Review permissions</u>",
-                Html.FROM_HTML_MODE_LEGACY)
-            textSize = 16f
-            setTextColor(message.linkTextColors)
-            setPadding(48, 0, 48, 24)
-            visibility = if (allGood) View.VISIBLE else View.GONE
-            setOnClickListener { showPermissionsDialog() }
-        }
-        // Plain link (not a button) that reopens the onboarding screen.
-        val manifesto = TextView(this).apply {
-            text = Html.fromHtml("<u>Read the manifesto again</u>",
-                Html.FROM_HTML_MODE_LEGACY)
-            textSize = 16f
-            setTextColor(message.linkTextColors)
-            setPadding(48, 0, 48, 32)
-            setOnClickListener {
-                startActivity(Intent(this@MainActivity, OnboardingActivity::class.java))
-            }
-        }
-        AlertDialog.Builder(this)
-            .setTitle("About AppBlock")
-            .setView(LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                addView(message)
-                addView(permsAlert, LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { leftMargin = 32; rightMargin = 32; bottomMargin = 24 })
-                addView(reviewLink)
-                addView(manifesto)
-            })
-            .setPositiveButton("OK", null)
-            .show()
+        setContentView(FrameLayout(this).apply {
+            addView(scroll, FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH))
+            addView(bar, FrameLayout.LayoutParams(Ui.MATCH, Ui.WRAP, Gravity.BOTTOM))
+        })
     }
 
     override fun onResume() {
         super.onResume()
-        // Coming back from the settings page or the app picker: refresh all.
-        for ((req, views) in reqViews) {
-            val vis = if (requirementMet(this, req)) View.GONE else View.VISIBLE
-            for (v in views) v.visibility = vis
-        }
         // Everything granted: make sure the blocker is up (no-op if it is).
         BlockerService.start(this)
-        notifReminder.visibility =
-            if (!notificationsEnabled() && !Storage.notifReminderDismissed(this))
-                View.VISIBLE else View.GONE
-        rebuild()
+        render()
         refreshPermRows?.invoke()
     }
+
+    // ------------------------------------------------------------- rendering
+
+    /** Rebuild the page from storage. Entrance motion plays on the first build only. */
+    private fun render() {
+        content.removeAllViews()
+        val animate = firstRender
+        firstRender = false
+        var index = 0
+        fun put(view: View, topDp: Int = 0) {
+            content.addView(view, Ui.lp().apply { topMargin = Ui.dp(this@MainActivity, topDp) })
+            if (animate) Ui.enter(view, index++)
+        }
+
+        val rules = Storage.loadRules(this)
+        val ready = allRequirementsMet(this)
+        put(topBar())
+
+        if (!ready) put(setupCard(), 24)
+
+        when (Storage.homeList(ready, rules.size)) {
+            Storage.HomeList.PAUSED_NOTE -> put(
+                Ui.muted(this,
+                    "Blocking is paused because a required setting " +
+                        "above is off. Your ${rules.size} blocked " +
+                        (if (rules.size == 1) "app is" else "apps are") +
+                        " saved and will reappear once it's back on.")
+                    .apply { gravity = Gravity.CENTER }, 28)
+            Storage.HomeList.EMPTY_HINT -> if (ready) {
+                if (!notificationsEnabled() && !Storage.notifReminderDismissed(this)) {
+                    put(notifReminder(), 20)
+                }
+                // Takes the rest of the page and centers itself in it.
+                content.addView(emptyState(animate), LinearLayout.LayoutParams(Ui.MATCH, 0, 1f))
+            }
+            Storage.HomeList.CARDS -> {
+                val entries = rules.entries.sortedBy { labelFor(it.key).lowercase() }
+                val today = todayUsageMs()
+                val now = System.currentTimeMillis()
+                val spent = entries.count { (pkg, rule) ->
+                    Storage.usedMs(Storage.loadIntervals(this, pkg), rule.windowMin, now) >=
+                        rule.allowMin * 60_000L
+                }
+                put(statusCard(entries.size, spent), 24)
+                if (!notificationsEnabled() && !Storage.notifReminderDismissed(this)) {
+                    put(notifReminder(), 12)
+                }
+                put(sectionTitle("Blocked apps", entries.size.toString()), 28)
+                for (entry in entries) {
+                    put(appCard(entry.key, entry.value, today[entry.key] ?: 0L, now, animate), 10)
+                }
+            }
+        }
+    }
+
+    private fun topBar() = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        addView(logoMark(34))
+        addView(Ui.display(context, "AppBlock", 19f).apply {
+            setPadding(Ui.dp(context, 10), 0, 0, 0)
+        }, Ui.lp(0).apply { weight = 1f })
+        addView(aboutButton())
+    }
+
+    /**
+     * The About button: one hairline circle holding an italic serif "i", an
+     * editorial mark instead of an icon-in-a-circle (two containers deep).
+     */
+    private fun aboutButton() = FrameLayout(this).apply {
+        background = Ui.shape(context, R.color.surface, 0f, R.color.line, oval = true)
+        contentDescription = "About"
+        isClickable = true
+        isFocusable = true
+        addView(Ui.txt(context, "i", 26f, tracking = 0f, editorial = true).apply {
+            typeface = Ui.serif(context, italic = true)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, FrameLayout.LayoutParams(Ui.WRAP, Ui.WRAP, Gravity.CENTER).apply {
+            leftMargin = Ui.dp(context, 1)   // italic leans: nudge so it reads centered
+            bottomMargin = Ui.dp(context, 1)
+        })
+        layoutParams = LinearLayout.LayoutParams(Ui.dp(context, 44), Ui.dp(context, 44))
+        setOnClickListener { showAbout() }
+        Ui.press(this, 0.92f)
+    }
+
+    private fun logoMark(sizeDp: Int) = FrameLayout(this).apply {
+        background = Ui.shape(context, R.color.ink, sizeDp * 0.3f)
+        addView(Ui.icon(context, R.drawable.ic_stat, (sizeDp * 0.62f).toInt(), R.color.on_ink).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                Ui.dp(context, (sizeDp * 0.62f).toInt()),
+                Ui.dp(context, (sizeDp * 0.62f).toInt()), Gravity.CENTER)
+        })
+        layoutParams = LinearLayout.LayoutParams(Ui.dp(context, sizeDp), Ui.dp(context, sizeDp))
+    }
+
+    private fun sectionTitle(title: String, count: String) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        addView(Ui.title(context, title, 18f), Ui.lp(0).apply { weight = 1f })
+        addView(Ui.muted(context, count, 14f))
+    }
+
+    // ----------------------------------------------------------------- setup
+
+    /** The three required settings as a checklist: tap a row, fix it, come back to a tick. */
+    private fun setupCard(): View {
+        val reqs = Storage.Requirement.entries
+        val done = reqs.count { requirementMet(this, it) }
+        val inner = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val p = Ui.dp(context, 20)
+            setPadding(p, p, p, Ui.dp(context, 10))
+            addView(Ui.display(context, "Finish setup", 24f))
+            addView(Ui.muted(context, "$done of ${reqs.size} done. Blocking starts when all three are on.")
+                .apply { setPadding(0, Ui.dp(context, 6), 0, 0) })
+            // Segmented progress: one segment per requirement.
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                reqs.forEachIndexed { i, req ->
+                    addView(View(context).apply {
+                        background = Ui.shape(context,
+                            if (requirementMet(context, req)) R.color.accent else R.color.surface_alt, 99f)
+                    }, Ui.lp(0, Ui.dp(context, 5)).apply {
+                        weight = 1f
+                        if (i > 0) marginStart = Ui.dp(context, 6)
+                    })
+                }
+            }, Ui.lp().apply { topMargin = Ui.dp(context, 16); bottomMargin = Ui.dp(context, 8) })
+            for (req in reqs) addView(requirementRow(req))
+        }
+        return Ui.bezel(this, inner)
+    }
+
+    private fun requirementRow(req: Storage.Requirement): View {
+        val met = requirementMet(this, req)
+        val trailing: View = if (met) FrameLayout(this).apply {
+            background = Ui.shape(context, R.color.accent, 0f, oval = true)
+            addView(Ui.icon(context, R.drawable.ic_check, 16, R.color.on_ink).apply {
+                layoutParams = FrameLayout.LayoutParams(
+                    Ui.dp(context, 16), Ui.dp(context, 16), Gravity.CENTER)
+            })
+            layoutParams = LinearLayout.LayoutParams(Ui.dp(context, 28), Ui.dp(context, 28))
+        } else Ui.txt(this, "Allow", 14f, R.color.on_ink, medium = true).apply {
+            background = Ui.shape(context, R.color.ink, 99f)
+            setPadding(Ui.dp(context, 16), Ui.dp(context, 9), Ui.dp(context, 16), Ui.dp(context, 9))
+        }
+        val icon = when (req) {
+            Storage.Requirement.USAGE_ACCESS -> R.drawable.ic_clock
+            Storage.Requirement.OVERLAY -> R.drawable.ic_layers
+            Storage.Requirement.BATTERY -> R.drawable.ic_battery
+        }
+        return Ui.row(this, icon, req.title, req.permsNote.removePrefix("Required. "), trailing) {
+            requirementFix(req)
+        }
+    }
+
+    // ----------------------------------------------------------- status/empty
+
+    private fun statusCard(count: Int, spent: Int): View {
+        val inner = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val p = Ui.dp(context, 22)
+            setPadding(p, p, p, p)
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = Ui.shape(context, R.color.accent_soft, 99f)
+                setPadding(Ui.dp(context, 10), Ui.dp(context, 6), Ui.dp(context, 12), Ui.dp(context, 6))
+                addView(View(context).apply {
+                    background = Ui.shape(context, R.color.accent, 0f, oval = true)
+                }, LinearLayout.LayoutParams(Ui.dp(context, 7), Ui.dp(context, 7)))
+                addView(Ui.txt(context, "On duty", 13f, R.color.accent, medium = true).apply {
+                    setPadding(Ui.dp(context, 7), 0, 0, 0)
+                })
+            }, Ui.lp(Ui.WRAP))
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.BOTTOM
+                addView(Ui.txt(context, count.toString(), 72f, tracking = -0.02f,
+                    lineSpacing = 1f, editorial = true))
+                addView(Ui.muted(context, if (count == 1) "app guarded" else "apps guarded", 17f).apply {
+                    setPadding(Ui.dp(context, 10), 0, 0, Ui.dp(context, 9))
+                })
+            }, Ui.lp().apply { topMargin = Ui.dp(context, 18) })
+            addView(Ui.muted(context,
+                if (spent == 0) "All within budget. Time comes back as it passes."
+                else if (spent == 1) "1 app is waiting for its time to come back."
+                else "$spent apps are waiting for their time to come back.", 14f)
+                .apply { setPadding(0, Ui.dp(context, 8), 0, 0) })
+        }
+        return Ui.bezel(this, inner)
+    }
+
+    /** Nothing here yet: three quiet gray lines, centered in the page. */
+    private fun emptyState(animate: Boolean) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER
+        addView(Ui.display(context, "No apps blocked yet.", 22f).apply {
+            setTextColor(getColor(R.color.muted))
+            gravity = Gravity.CENTER
+        }, Ui.lp())
+        addView(Ui.muted(context, "Pick an app and give it a small allowance.", 15f).apply {
+            gravity = Gravity.CENTER
+        }, Ui.lp().apply { topMargin = Ui.dp(context, 10) })
+        addView(Ui.txt(context, "How it works", 14f, R.color.muted, medium = true).apply {
+            paintFlags = paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG
+            setPadding(Ui.dp(context, 16), Ui.dp(context, 14), Ui.dp(context, 16), Ui.dp(context, 14))
+            isClickable = true
+            setOnClickListener { Guides.openHowItWorks(this@MainActivity) }
+            Ui.press(this, 0.97f)
+        }, Ui.lp(Ui.WRAP).apply { topMargin = Ui.dp(context, 6) })
+        if (animate) Ui.enter(this)
+    }
+    private fun notifReminder() = ReminderCard.make(
+        this,
+        message = "Notifications are off, so AppBlock can't warn you " +
+            "when you're close to using up an app's allowance. " +
+            "Tap to turn them on.",
+        confirmTitle = "Skip usage warnings?",
+        confirmBody = "Without notifications, AppBlock can't let you know " +
+            "when you're about to use up an app's allowance. The first " +
+            "you'll hear of it is the block wall.\n\nHide this reminder " +
+            "anyway? (You can still enable notifications later from the " +
+            "About page.)",
+        onFix = ::openNotificationSettings,
+        onHideForever = { Storage.setNotifReminderDismissed(this) })
+
+    // ----------------------------------------------------------------- cards
+
+    /**
+     * One card per blocked app: icon and name, a progress bar for how much of
+     * the allowance is spent, and the rule in words. Tap anywhere to edit.
+     */
+    private fun appCard(pkg: String, rule: Rule, todayMs: Long, now: Long, animate: Boolean): View {
+        val usedMs = Storage.usedMs(Storage.loadIntervals(this, pkg), rule.windowMin, now)
+        val usedMin = Storage.displayedUsedMin(usedMs, rule.allowMin)
+        val allowMs = rule.allowMin * 60_000f
+        val fraction = if (allowMs <= 0f) 1f else usedMs / allowMs
+        val isSpent = fraction >= 1f
+        val name = labelFor(pkg)
+
+        val status: View = if (isSpent) {
+            val waitMin = Storage.ceilMin(Storage.msUntilUnblocked(this, pkg, rule))
+            Ui.txt(this, "Blocked, back in ${Storage.fmtSpan(waitMin.toInt())}", 14f, R.color.danger,
+                medium = true)
+        } else Ui.muted(this, Storage.fmtToday(todayMs))
+
+        val card = Ui.card(this, 24f).apply {
+            val p = Ui.dp(context, 16)
+            setPadding(p, p, p, p)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { showLimitDialog(pkg, rule) }
+            Ui.press(this, 0.98f)
+
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(Ui.appIcon(context, iconFor(pkg), 46))
+                addView(LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(Ui.title(context, name, 17f).apply { maxLines = 1 })
+                    addView(status, Ui.lp().apply { topMargin = Ui.dp(context, 3) })
+                }, Ui.lp(0).apply { weight = 1f; marginStart = Ui.dp(context, 14); marginEnd = Ui.dp(context, 8) })
+                addView(Ui.iconButton(context, R.drawable.ic_tune, "Set limit for $name", 42) {
+                    showLimitDialog(pkg, rule)
+                })
+            })
+            addView(Ui.progressBar(context, fraction, animate),
+                Ui.lp(Ui.MATCH, Ui.dp(context, 6)).apply { topMargin = Ui.dp(context, 16) })
+            addView(Ui.muted(context,
+                "${Storage.fmtSpan(rule.allowMin)} in any " +
+                    "${Storage.fmtSpan(rule.windowMin)} · $usedMin min used", 13f),
+                Ui.lp().apply { topMargin = Ui.dp(context, 10) })
+        }
+        return card
+    }
+
+    // ----------------------------------------------------------- add / about
+
+    private fun onAddApp() {
+        // Blocking only works with every required setting on; adding apps
+        // before then would silently do nothing. One sheet names everything
+        // still missing; the checklist on the home screen fixes them.
+        val missing = missingRequirements(this)
+        if (missing.isNotEmpty()) {
+            Sheet.info(this, "Finish setting up first",
+                Storage.requirementsMessage(missing).replace(
+                    "The buttons on the home screen will get you set up.",
+                    "The checklist on the home screen will get you set up."))
+            return
+        }
+        startActivity(Intent(this, AppPickerActivity::class.java))
+    }
+
+    /**
+     * The "i": one fixed frame (InfoSheet) with About on its first page and
+     * Permissions, How it works and Philosophy sliding in over it. Swipe
+     * down to close; there's no Done button.
+     */
+    private fun showAbout() {
+        val version = try {
+            packageManager.getPackageInfo(packageName, 0).versionName
+        } catch (e: Exception) { "unknown" }
+        val sheet = InfoSheet(this)
+        val updates = mutableListOf<() -> Unit>()
+        fun hairline() = View(this).apply { setBackgroundColor(getColor(R.color.line)) }
+            .also { it.layoutParams = LinearLayout.LayoutParams(Ui.MATCH, 1) }
+
+        // The Permissions row: its chip and second line follow the live state.
+        val permsChip = Ui.statusChip(this, true)
+        val permsRow = Ui.row(this, R.drawable.ic_shield, "Permissions", "", permsChip) {
+            sheet.push(permissionsPage(sheet, updates))
+        }
+        val permsNote = (permsRow.getChildAt(1) as LinearLayout).getChildAt(1) as TextView
+        fun paintPerms() {
+            val good = allRequirementsMet(this) && notificationsEnabled()
+            Ui.setChip(permsChip, good)
+            if (!good) permsChip.text = "Check"
+            permsNote.text = if (good) "Everything is on" else "Something needs attention"
+        }
+        paintPerms()
+        updates += ::paintPerms
+        refreshPermRows = { updates.forEach { it() } }
+        sheet.setOnDismissListener { refreshPermRows = null }
+
+        val links = Ui.muted(this, "", 13f).apply {
+            gravity = Gravity.CENTER
+            text = Html.fromHtml(
+                "<a href=\"https://github.com/robinroy03/appblock\">Open source</a> under MIT. " +
+                    "Feedback? <a href=\"mailto:robinroy.work@gmail.com\">Email me</a>. " +
+                    "Made by <a href=\"https://x.com/_RobinRoy\">robin</a>.",
+                Html.FROM_HTML_MODE_LEGACY)
+            movementMethod = LinkMovementMethod.getInstance()
+            setLinkTextColor(getColor(R.color.ink))
+        }
+
+        val first = sheet.page {
+            // Free height is shared: a little above the mark, more above the links.
+            addView(View(context), LinearLayout.LayoutParams(Ui.MATCH, 0, 0.5f))
+            // The mark, the name, one line of what it is for.
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                addView(RingView(context, 6f).apply { drawIn() },
+                    LinearLayout.LayoutParams(Ui.dp(context, 76), Ui.dp(context, 76)))
+                addView(Ui.display(context, "AppBlock", 34f),
+                    Ui.lp(Ui.WRAP).apply { topMargin = Ui.dp(context, 22) })
+                addView(Ui.muted(context, "Version $version", 14f),
+                    Ui.lp(Ui.WRAP).apply { topMargin = Ui.dp(context, 8) })
+                addView(Ui.muted(context, "Set the rule while you're calm.", 20f).apply {
+                    typeface = Ui.serif(context, italic = true)
+                }, Ui.lp(Ui.WRAP).apply { topMargin = Ui.dp(context, 18) })
+            }, Ui.lp().apply { topMargin = Ui.dp(context, 16); bottomMargin = Ui.dp(context, 32) })
+
+            addView(hairline())
+            addView(permsRow)
+            addView(hairline())
+            addView(Ui.row(context, R.drawable.ic_lock, "Philosophy",
+                "Why it exists: tie yourself to the mast") {
+                sheet.push(Guides.philosophy(sheet))
+            })
+            addView(hairline())
+            addView(Ui.row(context, R.drawable.ic_clock, "How it works",
+                "Allowances, the wall, the warnings") {
+                sheet.push(Guides.howItWorks(sheet))
+            })
+            addView(hairline())
+
+            // Pins the links to the bottom of the frame.
+            addView(View(context), LinearLayout.LayoutParams(Ui.MATCH, 0, 1f))
+            addView(links, Ui.lp().apply { topMargin = Ui.dp(context, 24) })
+        }
+        sheet.show(first)
+    }
+    // ----------------------------------------------------------- permissions
 
     private fun notificationsEnabled() =
         getSystemService(NotificationManager::class.java).areNotificationsEnabled()
 
     // Fix path per requirement (live state lives in Perms.kt). The `when` is
     // exhaustive, so adding a Storage.Requirement entry won't compile until
-    // it's wired here — and everything else (buttons, blurbs, popup, About
-    // rows) follows free.
-
+    // it's wired here, and everything else (checklist, sheet, About rows)
+    // follows for free.
     private fun requirementFix(req: Storage.Requirement) {
         when (req) {
             Storage.Requirement.USAGE_ACCESS ->
@@ -238,8 +491,6 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun missingRequirements(): List<Storage.Requirement> = missingRequirements(this)
-
     /** System dialog asking to exempt AppBlock from battery optimization. */
     private fun requestBatteryExemption() {
         startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, packageUri(this)))
@@ -252,301 +503,209 @@ class MainActivity : Activity() {
             .putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
     }
 
-    // Lets onResume refresh the permissions dialog's ✓/✗ marks while it's open,
-    // so fixing a setting and coming back shows the tick without reopening.
-    private var refreshPermRows: (() -> Unit)? = null
-
-    /** One row per permission: ✓/✗, name, what it's for; tap to go fix it. */
-    private fun showPermissionsDialog() {
-        fun row(title: String, why: String, enabled: () -> Boolean, fix: () -> Unit):
-            Pair<LinearLayout, () -> Unit> {
-            val mark = TextView(this).apply { textSize = 22f }
-            val update = {
-                mark.text = if (enabled()) "✓" else "✗"
-                mark.setTextColor(if (enabled()) 0xFF2E7D32.toInt() else 0xFFC62828.toInt())
-            }
-            update()
-            val view = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(48, 24, 48, 24)
-                setOnClickListener { fix() }
-                addView(mark, LinearLayout.LayoutParams(64, LinearLayout.LayoutParams.WRAP_CONTENT))
-                addView(LinearLayout(context).apply {
-                    orientation = LinearLayout.VERTICAL
-                    setPadding(16, 0, 0, 0)
-                    addView(TextView(context).apply { text = title; textSize = 16f })
-                    addView(TextView(context).apply { text = why; textSize = 13f; alpha = 0.7f })
-                })
-            }
-            return view to update
+    /** One row per permission: icon, name, what it's for, On/Off. Tap to fix. */
+    private fun permissionsPage(sheet: InfoSheet, updates: MutableList<() -> Unit>): View {
+        fun row(icon: Int, title: String, why: String, enabled: () -> Boolean, fix: () -> Unit): View {
+            val chip = Ui.statusChip(this, enabled())
+            updates += { Ui.setChip(chip, enabled()) }
+            return Ui.row(this, icon, title, why, chip) { fix() }
         }
-        // Required rows come straight from the Requirement enum; optional
-        // extras follow. Each entry is (view, refresh-the-✓/✗ closure).
-        val perms = Storage.Requirement.entries.map { req ->
-            row(req.title, req.permsNote, { requirementMet(this, req) }, { requirementFix(req) })
-        } + listOf(
-            row("Notifications",
-                "Optional. Warns you at 50% and 90% of an app's allowance.",
-                ::notificationsEnabled, ::openNotificationSettings))
-        refreshPermRows = { for ((_, update) in perms) update() }
-        AlertDialog.Builder(this)
-            .setTitle("Permissions")
-            .setView(LinearLayout(this).apply {
+        return sheet.page("Permissions", "What AppBlock needs, and why.") {
+            val list = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                for ((view, _) in perms) addView(view)
-            })
-            .setPositiveButton("Done", null)
-            .setOnDismissListener { refreshPermRows = null }
-            .show()
-    }
-
-    /**
-     * One row per blocked app, laid out like Digital Wellbeing's list:
-     * [icon] Label / today's screen time / its limit  |  [hourglass].
-     */
-    private fun rebuild() {
-        list.removeAllViews()
-        val rules = Storage.loadRules(this)
-
-        // While a required setting is off the app cards hide (they'd promise
-        // something the app can't deliver) but the rules stay saved, so
-        // fixing it brings everything straight back.
-        when (Storage.homeList(allRequirementsMet(this), rules.size)) {
-            Storage.HomeList.PAUSED_NOTE -> {
-                list.addView(TextView(this).apply {
-                    text = "\nBlocking is paused because a required setting " +
-                        "above is off. Your ${rules.size} blocked " +
-                        (if (rules.size == 1) "app is" else "apps are") +
-                        " saved and will reappear once it's back on."
-                    gravity = Gravity.CENTER
-                })
-                return
+                for (req in Storage.Requirement.entries) {
+                    addView(row(
+                        when (req) {
+                            Storage.Requirement.USAGE_ACCESS -> R.drawable.ic_clock
+                            Storage.Requirement.OVERLAY -> R.drawable.ic_layers
+                            Storage.Requirement.BATTERY -> R.drawable.ic_battery
+                        },
+                        req.title, req.permsNote, { requirementMet(this@MainActivity, req) },
+                        { requirementFix(req) }))
+                }
+                addView(row(R.drawable.ic_bell, "Notifications",
+                    "Optional. Warns you at 50% and 90% of an app's allowance.",
+                    ::notificationsEnabled, ::openNotificationSettings))
             }
-            Storage.HomeList.EMPTY_HINT -> {
-                list.addView(TextView(this).apply {
-                    text = "\nNo apps blocked yet."
-                    gravity = Gravity.CENTER
-                })
-                return
-            }
-            Storage.HomeList.CARDS -> {}
-        }
-        val entries = rules.entries.sortedBy { labelFor(it.key).lowercase() }
-        val today = todayUsageMs()
-
-        for ((pkg, rule) in entries) {
-            val usedMs = Storage.usedMs(
-                Storage.loadIntervals(this, pkg), rule.windowMin, System.currentTimeMillis())
-            val usedMin = Storage.displayedUsedMin(usedMs, rule.allowMin)
-            val label = TextView(this).apply {
-                text = labelFor(pkg)
-                textSize = 18f
-                maxLines = 1
-            }
-            val text = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(16), 0, dp(12), 0)
-                addView(label)
-                addView(TextView(context).apply {
-                    text = Storage.fmtToday(today[pkg] ?: 0L)
-                    textSize = 14f
-                    alpha = 0.7f
-                })
-                addView(TextView(context).apply {
-                    text = "${Storage.fmtSpan(rule.allowMin)} in any " +
-                        "${Storage.fmtSpan(rule.windowMin)} · $usedMin min used"
-                    textSize = 14f
-                    alpha = 0.7f
-                })
-            }
-            list.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, dp(14), 0, dp(14))
-                addView(ImageView(context).apply { setImageDrawable(iconFor(pkg)) },
-                    LinearLayout.LayoutParams(dp(44), dp(44)))
-                addView(text, LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                // Thin divider setting the limit button apart, as in the
-                // system's own screen-time list.
-                addView(View(context).apply {
-                    setBackgroundColor(label.currentTextColor)
-                    alpha = 0.25f
-                }, LinearLayout.LayoutParams(dp(1), dp(40)))
-                addView(ImageView(context).apply {
-                    setImageResource(R.drawable.ic_hourglass)
-                    contentDescription = "Set limit for ${labelFor(pkg)}"
-                    setPadding(dp(12), dp(12), dp(12), dp(12))
-                    background = getDrawable(TypedValue().also {
-                        theme.resolveAttribute(
-                            android.R.attr.selectableItemBackgroundBorderless, it, true)
-                    }.resourceId)
-                    setOnClickListener { showLimitDialog(pkg, rule) }
-                }, LinearLayout.LayoutParams(dp(48), dp(48)).apply { leftMargin = dp(12) })
-            })
+            addView(list, Ui.lp().apply { topMargin = Ui.dp(context, 12) })
         }
     }
+    // ----------------------------------------------------------------- limit
 
     /**
-     * Two scroll wheels, the allowance and the rolling window it's measured
-     * over, each ticking the vibration motor as it turns. "Type exact times"
-     * swaps them for number fields, for limits between or beyond the wheel
-     * stops (a week is 168 h).
-     * OK (enabled only for a valid rule) saves straight away; Remove (the
-     * old ✕) lives here too.
+     * "Allow X in any Y". Each side is a number you can type or nudge with
+     * the minus and plus buttons, plus a unit (min, hr, day) you tap. Quick
+     * picks fill both sides at once and light up whenever the fields match
+     * one. One layout covers everything from "1 min in any 15 min" to "6 hrs
+     * in any week", so there is no separate typing mode. OK (enabled only
+     * for a valid rule) saves straight away; Remove lives here too.
      */
     private fun showLimitDialog(pkg: String, rule: Rule) {
         val name = labelFor(pkg)
-        val message = TextView(this).apply {
-            textSize = 16f
-            setPadding(dp(24), dp(8), dp(24), dp(8))
-        }
-        fun NumberPicker.show(values: List<Int>, selected: Int) {
-            // Clear the labels first: a new max past the old labels' length throws.
-            displayedValues = null
-            minValue = 0
-            maxValue = values.size - 1
-            displayedValues = values.map(Storage::fmtSpan).toTypedArray()
-            value = values.indexOf(selected)
-        }
-        fun wheel() = NumberPicker(this).apply {
-            wrapSelectorWheel = false
-            // Wheel only: no tap-to-type keyboard on the selected value.
-            descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
-        }
-        val window = wheel()
-        val windowValues = Storage.wheelChoices(Storage.WINDOW_CHOICES, rule.windowMin)
-        window.show(windowValues, rule.windowMin)
-        // The Allow wheel only ever offers allowances shorter than the window.
-        val allow = wheel()
-        var allowValues = Storage.allowStops(rule.windowMin, rule.allowMin)
-        allow.show(allowValues, Storage.keepStop(allowValues, rule.allowMin))
-        val allowField = numberField()
-        val windowHField = numberField()
-        val windowMField = numberField()
-        var typing = false
-        fun picked(): Rule? =
-            if (typing) Storage.exactRule(allowField.text.toString(),
-                windowHField.text.toString(), windowMField.text.toString())
-            else Rule(allowValues[allow.value], windowValues[window.value])
-                .takeIf(Storage::validRule)
+        val sheet = Sheet(this).header("Set limit", name, Ui.appIcon(this, iconFor(pkg), 48))
 
-        lateinit var dialog: AlertDialog
+        val summary = Ui.display(this, "", 26f)
+        val note = Ui.muted(this, "", 14f)
+
+        /** One side of the sentence: stepper, typed number, unit. */
+        class Side(val label: String, val units: List<Storage.SpanUnit>, startMin: Int) {
+            var unit = Storage.unitFor(startMin, units)
+            val field = numberField().apply { setText((startMin / unit.minutes).toString()) }
+            val segments = mutableMapOf<Storage.SpanUnit, TextView>()
+            var changed: () -> Unit = {}
+            val amount get() = field.text.toString()
+
+            fun paintUnits() {
+                for ((u, v) in segments) {
+                    val on = u == unit
+                    v.setTextColor(getColor(if (on) R.color.on_ink else R.color.muted))
+                    v.background = if (on) Ui.shape(this@MainActivity, R.color.ink, 11f) else null
+                }
+            }
+
+            fun setMinutes(min: Int) {
+                unit = Storage.unitFor(min, units)
+                paintUnits()
+                field.setText((min / unit.minutes).toString())
+            }
+
+            fun step(up: Boolean) {
+                val next = Storage.stepAmount(Storage.parseAmount(amount) ?: 1, unit, up)
+                tick()
+                field.setText(next.toString())
+                field.setSelection(field.text.length)
+            }
+
+            val view: View = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(Ui.eyebrow(context, label))
+                addView(LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(Ui.iconButton(context, R.drawable.ic_minus, "$label: less", 40) { step(false) })
+                    addView(field, Ui.lp(Ui.dp(context, 64)).apply {
+                        marginStart = Ui.dp(context, 6); marginEnd = Ui.dp(context, 6)
+                    })
+                    addView(Ui.iconButton(context, R.drawable.ic_plus, "$label: more", 40) { step(true) })
+                    addView(View(context), Ui.lp(0).apply { weight = 1f })
+                    addView(LinearLayout(context).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        background = Ui.shape(context, R.color.surface_alt, 14f)
+                        val p = Ui.dp(context, 3)
+                        setPadding(p, p, p, p)
+                        for (u in units) {
+                            val seg = Ui.txt(context, u.label, 14f, R.color.muted, medium = true).apply {
+                                gravity = Gravity.CENTER
+                                setPadding(Ui.dp(context, 11), Ui.dp(context, 8), Ui.dp(context, 11), Ui.dp(context, 8))
+                                isClickable = true
+                                setOnClickListener { unit = u; paintUnits(); changed() }
+                            }
+                            segments[u] = seg
+                            addView(seg)
+                        }
+                    })
+                }, Ui.lp().apply { topMargin = Ui.dp(context, 8) })
+            }
+
+            init { paintUnits() }
+        }
+
+        val allow = Side("Allow", listOf(Storage.SpanUnit.MIN, Storage.SpanUnit.HR), rule.allowMin)
+        val window = Side("In any", Storage.SpanUnit.entries, rule.windowMin)
+
+        fun picked(): Rule? =
+            Storage.limitRule(allow.amount, allow.unit, window.amount, window.unit)
+
+        // Quick picks: tap to fill both sides; the matching one stays lit.
+        val chips = Storage.PRESETS.associateWith { preset ->
+            Ui.txt(this, "${Storage.fmtSpan(preset.allowMin)} in ${Storage.fmtSpan(preset.windowMin)}",
+                14f, medium = true).apply {
+                setPadding(Ui.dp(context, 14), Ui.dp(context, 9), Ui.dp(context, 14), Ui.dp(context, 9))
+                isClickable = true
+                Ui.press(this, 0.95f)
+                setOnClickListener {
+                    tick()
+                    allow.setMinutes(preset.allowMin)
+                    window.setMinutes(preset.windowMin)
+                }
+            }
+        }
+
+        val ok = sheet.primary("OK") {
+            val r = picked() ?: return@primary
+            val rules = Storage.loadRules(this).toMutableMap()
+            rules[pkg] = r
+            Storage.saveRules(this, rules)
+            sheet.dismiss()
+            render()
+        }
+
         fun describe() {
             val r = picked()
-            // The wheels can't pick nonsense; typed numbers can, so the
-            // Allow field says what's wrong and OK waits for a valid rule.
-            if (typing) allowField.error = Storage.exactAllowError(allowField.text.toString(),
-                windowHField.text.toString(), windowMField.text.toString())
-            if (r != null) message.text = "$name gets ${Storage.fmtSpan(r.allowMin)} in any " +
-                "${Storage.fmtSpan(r.windowMin)}. Time comes back as old use " +
-                "rolls out of the window, so there's no midnight reset."
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.isEnabled = r != null
+            if (r != null) {
+                summary.text = "${Storage.fmtSpan(r.allowMin)} in any ${Storage.fmtSpan(r.windowMin)}"
+                summary.alpha = 1f
+                note.setTextColor(getColor(R.color.muted))
+                note.text = "Time comes back as old use rolls out of the window, so there's " +
+                    "no midnight reset."
+            } else {
+                // Keep the last good summary, dimmed, and say what's wrong.
+                summary.alpha = 0.3f
+                val err = Storage.limitError(allow.amount, allow.unit, window.amount, window.unit)
+                note.setTextColor(getColor(if (err != null) R.color.danger else R.color.muted))
+                note.text = err ?: "Enter how much time, and over how long."
+            }
+            ok.isEnabled = r != null
+            for ((preset, chip) in chips) {
+                val on = r == preset
+                chip.setTextColor(getColor(if (on) R.color.on_ink else R.color.ink))
+                chip.background = if (on) Ui.shape(this, R.color.ink, 99f)
+                else Ui.shape(this, R.color.surface, 99f, R.color.line)
+            }
         }
-        allow.setOnValueChangedListener { _, _, _ ->
-            tick()
-            describe()
-        }
-        window.setOnValueChangedListener { _, _, _ ->
-            tick()
-            val previous = allowValues[allow.value]
-            allowValues = Storage.allowStops(windowValues[window.value], previous)
-            allow.show(allowValues, Storage.keepStop(allowValues, previous))
-            describe()
-        }
+        allow.changed = ::describe
+        window.changed = ::describe
         val watcher = object : TextWatcher {
             override fun afterTextChanged(s: Editable) = describe()
             override fun beforeTextChanged(s: CharSequence, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence, a: Int, b: Int, c: Int) {}
         }
-        for (f in listOf(allowField, windowHField, windowMField)) f.addTextChangedListener(watcher)
+        allow.field.addTextChangedListener(watcher)
+        window.field.addTextChangedListener(watcher)
 
-        fun column(heading: String, vararg views: View) = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(16), 0, dp(16), 0)
-            addView(TextView(context).apply { text = heading; alpha = 0.7f })
-            if (views.size == 1) addView(views[0])
-            else addView(LinearLayout(context).apply {
+        sheet.add(summary, 20)
+        sheet.add(note, 6)
+        sheet.add(allow.view, 24)
+        sheet.add(window.view, 20)
+        sheet.add(Ui.eyebrow(this, "Quick picks"), 24)
+        sheet.add(HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                for (v in views) addView(v)
+                for (chip in chips.values) addView(chip, Ui.lp(Ui.WRAP).apply {
+                    marginEnd = Ui.dp(context, 8)
+                })
             })
-        }
-        fun unit(text: String) = TextView(this).apply {
-            this.text = text
-            setPadding(dp(4), 0, dp(8), 0)
-        }
-        fun pair(vararg columns: View) = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(0, dp(8), 0, 0)
-            for (c in columns) addView(c)
-        }
-        val wheels = pair(column("Allow", allow), column("in any", window))
-        val fields = pair(
-            column("Allow", allowField, unit("min")),
-            column("in any", windowHField, unit("h"), windowMField, unit("min")))
-            .apply { visibility = View.GONE }
-        val typeLink = TextView(this).apply {
-            text = Html.fromHtml("<u>Type exact times</u>", Html.FROM_HTML_MODE_LEGACY)
-            setTextColor(message.linkTextColors)
-            gravity = Gravity.CENTER
-            setPadding(dp(24), dp(12), dp(24), dp(12))
-            setOnClickListener {
-                // Start the fields from whatever the wheels show now.
-                val r = Rule(allowValues[allow.value], windowValues[window.value])
-                allowField.setText(r.allowMin.toString())
-                windowHField.setText((r.windowMin / 60).toString())
-                windowMField.setText((r.windowMin % 60).toString())
-                typing = true
-                wheels.visibility = View.GONE
-                fields.visibility = View.VISIBLE
-                visibility = View.GONE
-                describe()
-                allowField.requestFocus()
-                allowField.selectAll()
-                (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
-                    .showSoftInput(allowField, 0)
-            }
-        }
-        dialog = AlertDialog.Builder(this)
-            .setIcon(iconFor(pkg))
-            .setTitle("Set limit")
-            .setView(LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                addView(message)
-                addView(wheels)
-                addView(fields)
-                addView(typeLink)
+        }, 10)
+        sheet.actions(
+            sheet.secondary("Cancel"), ok,
+            leading = Ui.ghostButton(this, "Remove", danger = true) {
+                sheet.dismiss()
+                removeApp(pkg)
             })
-            .setPositiveButton("OK") { _, _ ->
-                val r = picked() ?: return@setPositiveButton
-                val rules = Storage.loadRules(this).toMutableMap()
-                rules[pkg] = r
-                Storage.saveRules(this, rules)
-                rebuild()
-            }
-            .setNegativeButton("Cancel", null)
-            .setNeutralButton("Remove") { _, _ -> removeApp(pkg) }
-            .create()
-        dialog.setOnShowListener { describe() }
-        dialog.show()
+        sheet.setOnShowListener { describe() }
+        sheet.show()
     }
 
     // Confirmation guards against accidental taps on Remove.
     private fun removeApp(pkg: String) {
-        AlertDialog.Builder(this)
-            .setIcon(iconFor(pkg))
-            .setTitle("Remove ${labelFor(pkg)}?")
-            .setMessage("Are you sure you want to remove the limits for this app?")
-            .setPositiveButton("Yes") { _, _ ->
-                Storage.removeApp(this, pkg)
-                rebuild()
-            }
-            .setNegativeButton("No", null)
-            .show()
+        Sheet.confirm(this, "Remove ${labelFor(pkg)}?",
+            "Are you sure you want to remove the limits for this app?",
+            yes = "Yes", no = "No", icon = Ui.appIcon(this, iconFor(pkg), 48)) {
+            Storage.removeApp(this, pkg)
+            render()
+        }
     }
 
     /** Screen time per package since midnight (needs Usage access, which the cards do too). */
@@ -560,14 +719,24 @@ class MainActivity : Activity() {
             .mapValues { it.value.totalTimeInForeground }
     }
 
+    /** Typed-number box for the limit sheet: soft plate, big digits, one tap selects all. */
     private fun numberField() = EditText(this).apply {
         inputType = InputType.TYPE_CLASS_NUMBER
-        minEms = 2
+        imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
         gravity = Gravity.CENTER
+        textSize = 20f
+        typeface = Ui.sans(context, medium = true)
+        setTextColor(getColor(R.color.ink))
+        setSelectAllOnFocus(true)
+        maxLines = 1
+        filters = arrayOf(android.text.InputFilter.LengthFilter(5))
+        background = Ui.shape(context, R.color.surface_alt, 14f)
+        val h = Ui.dp(context, 6)
+        val v = Ui.dp(context, 9)
+        setPadding(h, v, h, v)
     }
-
     /**
-     * One short click of the vibration motor per wheel step: a plain 12 ms
+     * One short click of the vibration motor per stepper tap: a plain 12 ms
      * pulse, tagged as a media vibration. Anything Android or OxygenOS files
      * as touch feedback (performHapticFeedback, the predefined TICK, even an
      * untagged short pulse) is silent while the phone's "touch feedback"
@@ -581,8 +750,6 @@ class MainActivity : Activity() {
             vibrator.vibrate(pulse, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_MEDIA))
         else vibrator.vibrate(pulse)
     }
-
-    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     private fun labelFor(pkg: String) = try {
         packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()

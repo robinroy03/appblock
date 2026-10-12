@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Faint full disc and track: the whole budget. -->
+    <path
+        android:pathData="M30,54a24,24 0 1,0 48,0a24,24 0 1,0 -48,0"
+        android:fillColor="#0DFFFFFF" />
+    <path
+        android:pathData="M30,54a24,24 0 1,0 48,0a24,24 0 1,0 -48,0"
+        android:strokeColor="#26FFFFFF"
+        android:strokeWidth="6.5" />
+    <!-- What's left: starts at 12 o'clock, runs counter-clockwise, mint at the tail. -->
+    <path
+        android:pathData="M54,30 A24,24 0 1,0 78,54"
+        android:strokeWidth="6.5"
+        android:strokeLineCap="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:centerX="54" android:centerY="54"
+                android:type="sweep">
+                <item android:offset="0" android:color="#FF3DDC9A" />
+                <item android:offset="0.35" android:color="#FFBFF3DD" />
+                <item android:offset="0.55" android:color="#FFF6F7F9" />
+                <item android:offset="0.78" android:color="#FFF6F7F9" />
+                <item android:offset="0.79" android:color="#FF3DDC9A" />
+                <item android:offset="1" android:color="#FF3DDC9A" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- The hand, resting at the start of the arc. -->
+    <path
+        android:pathData="M54,54 L54,42"
+        android:strokeColor="#FFF6F7F9"
+        android:strokeWidth="6"
+        android:strokeLineCap="round" />
+    <!-- The gap's marker. -->
+    <path
+        android:pathData="M71,32.4a4.8,4.8 0 1,0 9.6,0a4.8,4.8 0 1,0 -9.6,0"
+        android:fillColor="#FF3DDC9A" />
+</vector>

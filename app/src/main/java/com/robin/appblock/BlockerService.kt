@@ -12,7 +12,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
-import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.Bundle
@@ -21,9 +20,12 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
+import android.text.SpannableString
+import android.text.style.AbsoluteSizeSpan
+import android.text.style.ForegroundColorSpan
 import android.view.Gravity
 import android.view.WindowManager
-import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -112,7 +114,7 @@ class BlockerService : Service() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL_SERVICE, "Blocker running", NotificationManager.IMPORTANCE_MIN))
         return Notification.Builder(this, CHANNEL_SERVICE)
-            .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle("AppBlock is on duty")
             .setContentText("Watching for apps over their allowance.")
             .setContentIntent(openApp())
@@ -261,7 +263,7 @@ class BlockerService : Service() {
             else "You've used ${Storage.usedPct(usedMs, rule.allowMin)}% " +
                 "(${Storage.fmtMin(usedMs)} min) of your usage for ${labelFor(pkg)}"
         show(NOTIF_TIMER, Notification.Builder(this, CHANNEL_TIMER)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle("${labelFor(pkg)}: time left")
             .setContentText(text)
             .setWhen(deadline)
@@ -284,6 +286,10 @@ class BlockerService : Service() {
         timerLevel = 0
         show(NOTIF_SERVICE, onDutyNotification())
     }
+
+    private fun iconFor(pkg: String): android.graphics.drawable.Drawable = try {
+        packageManager.getApplicationIcon(pkg)
+    } catch (e: Exception) { getDrawable(android.R.drawable.sym_def_app_icon)!! }
 
     private fun labelFor(pkg: String) = try {
         packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
@@ -320,30 +326,67 @@ class BlockerService : Service() {
         if (!Settings.canDrawOverlays(this)) return
         val waitMin = Storage.ceilMin(Storage.msUntilUnblocked(this, pkg, rule))
         val label = labelFor(pkg)
-        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-            Configuration.UI_MODE_NIGHT_YES
 
         val wall = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(64, 0, 64, 0)
-            setBackgroundColor(if (night) 0xFF121212.toInt() else 0xFFFAFAFA.toInt())
+            clipChildren = false
+            val side = Ui.dp(this@BlockerService, 28)
+            setPadding(side, side, side, side)
+            setBackgroundColor(getColor(R.color.canvas))
+
+            // One TextView carries both lines (the e2e tests read it whole);
+            // spans give the headline weight and the wait time a calmer tone.
+            val headline = "$label is blocked."
+            val wait = "Try again in ${Storage.fmtSpan(waitMin.toInt())}."
+            val message = SpannableString("$headline\n\n$wait").apply {
+                setSpan(AbsoluteSizeSpan(40, true), 0, headline.length + 1, 0)
+                setSpan(Ui.FontSpan(Ui.serif(this@BlockerService)), 0, headline.length, 0)
+                setSpan(AbsoluteSizeSpan(10, true), headline.length + 1, headline.length + 2, 0)  // the blank line: a small gap
+                setSpan(AbsoluteSizeSpan(18, true), headline.length + 2, length, 0)
+                setSpan(ForegroundColorSpan(getColor(R.color.muted)), headline.length + 2, length, 0)
+            }
+
+            val icon = FrameLayout(context).apply {
+                clipChildren = false   // the lock badge overhangs the icon's corner
+                addView(Ui.appIcon(context, iconFor(pkg), 84).apply {
+                    layoutParams = FrameLayout.LayoutParams(Ui.dp(context, 84), Ui.dp(context, 84))
+                    colorFilter = android.graphics.ColorMatrixColorFilter(
+                        android.graphics.ColorMatrix().apply { setSaturation(0f) })
+                    alpha = 0.55f
+                })
+                addView(FrameLayout(context).apply {
+                    background = Ui.shape(context, R.color.ink, 0f, R.color.canvas, oval = true)
+                    addView(Ui.icon(context, R.drawable.ic_lock, 16, R.color.on_ink).apply {
+                        layoutParams = FrameLayout.LayoutParams(
+                            Ui.dp(context, 16), Ui.dp(context, 16), Gravity.CENTER)
+                    })
+                }, FrameLayout.LayoutParams(Ui.dp(context, 34), Ui.dp(context, 34),
+                    Gravity.BOTTOM or Gravity.END).apply {
+                    marginEnd = -Ui.dp(context, 6); bottomMargin = -Ui.dp(context, 6)
+                })
+            }
+            addView(icon, LinearLayout.LayoutParams(Ui.dp(context, 84), Ui.dp(context, 84)))
             addView(TextView(context).apply {
-                text = "$label is blocked.\n\nTry again in ${Storage.fmtSpan(waitMin.toInt())}."
-                textSize = 24f
+                text = message
+                textSize = 30f
                 gravity = Gravity.CENTER
-                setTextColor(if (night) 0xFFEEEEEE.toInt() else 0xFF111111.toInt())
-            })
-            addView(Button(context).apply {
-                text = "Go to home screen"
-                setOnClickListener {
-                    goHome()
-                    hideOverlay()
-                }
-            }, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = 64; gravity = Gravity.CENTER_HORIZONTAL })
+                setTextColor(getColor(R.color.ink))
+                typeface = Ui.sans(context)
+                setLineSpacing(0f, 1.05f)
+                letterSpacing = -0.01f
+            }, LinearLayout.LayoutParams(Ui.MATCH, Ui.WRAP).apply { topMargin = Ui.dp(context, 32) })
+            addView(Ui.muted(context, "The minutes come back as older use leaves the window.", 14f).apply {
+                gravity = Gravity.CENTER
+            }, LinearLayout.LayoutParams(Ui.MATCH, Ui.WRAP).apply { topMargin = Ui.dp(context, 16) })
+            addView(Ui.primaryButton(context, "Go to home screen", R.drawable.ic_chevron) {
+                goHome()
+                hideOverlay()
+            }, LinearLayout.LayoutParams(Ui.WRAP, Ui.WRAP).apply { topMargin = Ui.dp(context, 36) })
+
+            // Settle in: no fade of the wall itself (it must cover instantly).
+            Ui.enter(icon, 0)
+            for (i in 1 until childCount) Ui.enter(getChildAt(i), i)
         }
 
         val lp = WindowManager.LayoutParams(

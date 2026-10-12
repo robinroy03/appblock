@@ -214,76 +214,64 @@ object Storage {
         else -> fmtSpan((ms / 60_000).toInt()) + " today"
     }
 
-    // Stops on the limit dialog's two wheels: the allowance, and the rolling
-    // window it's measured over. Anything in between: "Type exact times".
-    val ALLOW_CHOICES = listOf(1, 2, 3, 4, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180)
-    val WINDOW_CHOICES = listOf(15, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720,
-        1440, 2880, 4320, 10080)
+    // ---- the limit sheet: "allow X in any Y", each a number and a unit ----
 
-    /**
-     * A wheel's stops: the standard choices, plus `current` slotted in order
-     * when it isn't one of them (budgets typed in before the wheels existed),
-     * so opening the dialog never silently changes a rule.
-     */
-    fun wheelChoices(standard: List<Int>, current: Int): List<Int> =
-        if (current in standard) standard else (standard + current).sorted()
+    /** Units the limit sheet offers; the number beside a unit is what you type or step. */
+    enum class SpanUnit(val minutes: Int, val label: String) {
+        MIN(1, "min"), HR(60, "hr"), DAY(1440, "day")
+    }
+
+    /** One-tap starting points. The sheet highlights whichever one the fields currently match. */
+    val PRESETS = listOf(Rule(5, 120), Rule(10, 60), Rule(15, 120), Rule(30, 240), Rule(60, 1440))
+
+    /** Typed numbers stop here: far past a week in any unit, and small enough never to overflow an Int of minutes. */
+    private const val MAX_AMOUNT = 99_999
 
     /**
      * Whether a rule can actually limit anything: some allowance, shorter
      * than its window (allowance >= window would never block). Gates the
-     * limit dialog's OK button.
+     * limit sheet's OK button.
      */
     fun validRule(rule: Rule): Boolean =
         rule.allowMin >= 1 && rule.allowMin < rule.windowMin
 
-    /**
-     * The Allow wheel's stops for a given window: only allowances shorter
-     * than it, so the wheels can't land on a rule that would never block.
-     */
-    fun allowStops(windowMin: Int, currentAllow: Int): List<Int> =
-        wheelChoices(ALLOW_CHOICES, currentAllow).filter { it < windowMin }.ifEmpty { listOf(1) }
+    /** The largest of `units` that divides `minutes` evenly: 120 -> HR, 90 -> MIN, 1440 -> DAY. */
+    fun unitFor(minutes: Int, units: List<SpanUnit>): SpanUnit =
+        units.lastOrNull { minutes % it.minutes == 0 } ?: units.first()
+
+    /** A typed number: digits only, 1 up to the cap. Null while blank or nonsense. */
+    fun parseAmount(text: String): Int? = text.trim().toIntOrNull()?.takeIf { it in 1..MAX_AMOUNT }
 
     /**
-     * Where the Allow wheel lands after its stops change: the same value if
-     * it's still there, else the largest stop below it (the window shrank
-     * under it), else the first.
+     * The rule in the limit sheet's two fields. Null until both hold numbers
+     * and the rule is valid (which is what keeps OK disabled).
      */
-    fun keepStop(stops: List<Int>, previous: Int): Int =
-        stops.lastOrNull { it <= previous } ?: stops.first()
-
-    /** Minutes in the exact window fields (hours + minutes, a blank counts as 0); null if unreadable, zero or too big to store. */
-    fun exactWindowMin(windowH: String, windowM: String): Int? {
-        val h = windowH.trim().ifEmpty { "0" }.toLongOrNull() ?: return null
-        val m = windowM.trim().ifEmpty { "0" }.toLongOrNull() ?: return null
-        if (maxOf(h, m) > Int.MAX_VALUE) return null
-        val w = h * 60 + m
-        return if (w < 1 || w > Int.MAX_VALUE) null else w.toInt()
+    fun limitRule(allow: String, allowUnit: SpanUnit, window: String, windowUnit: SpanUnit): Rule? {
+        val a = parseAmount(allow) ?: return null
+        val w = parseAmount(window) ?: return null
+        return Rule(a * allowUnit.minutes, w * windowUnit.minutes).takeIf(::validRule)
     }
 
     /**
-     * The rule typed into the limit dialog's exact fields: allowance in
-     * minutes, window as hours + minutes ("6", "1", "34" -> 6 min in any 94).
-     * Null until it's a valid rule.
+     * What's wrong with the fields, in words, or null. Only judges once both
+     * are numbers, so half-typed input isn't flagged.
      */
-    fun exactRule(allow: String, windowH: String, windowM: String): Rule? {
-        val a = allow.trim().toIntOrNull() ?: return null
-        val w = exactWindowMin(windowH, windowM) ?: return null
-        return Rule(a, w).takeIf(::validRule)
+    fun limitError(allow: String, allowUnit: SpanUnit, window: String, windowUnit: SpanUnit): String? {
+        val a = parseAmount(allow) ?: return null
+        val w = parseAmount(window) ?: return null
+        return if (a * allowUnit.minutes >= w * windowUnit.minutes)
+            "The allowance has to be shorter than the window." else null
     }
 
     /**
-     * Inline error for the exact Allow field, or null. Only once both fields
-     * hold numbers, so half-typed input isn't flagged.
+     * One press of a stepper button. Small minute counts move by 1; from 10
+     * up, minutes move in fives and land on multiples of five (12 -> 15,
+     * 12 down -> 10). Hours and days always move by 1. Never below 1.
      */
-    fun exactAllowError(allow: String, windowH: String, windowM: String): String? {
-        val a = allow.trim().toIntOrNull() ?: return null
-        val w = exactWindowMin(windowH, windowM) ?: return null
-        return when {
-            a < 1 -> "At least 1 min"
-            a >= w -> "Has to be shorter than the window"
-            else -> null
-        }
-    }
+    fun stepAmount(value: Int, unit: SpanUnit, up: Boolean): Int = when {
+        up -> if (unit == SpanUnit.MIN && value >= 10) (value / 5 + 1) * 5 else value + 1
+        else -> if (unit == SpanUnit.MIN && value > 10) (value - 1) / 5 * 5 else value - 1
+    }.coerceIn(1, MAX_AMOUNT)
 
     /**
      * Minutes to show as "N min used" on a home-list card: partial minutes round up

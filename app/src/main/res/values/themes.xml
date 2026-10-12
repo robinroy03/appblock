@@ -1,6 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Light theme; the values-night twin swaps in the dark parent
-         automatically when the device is in dark mode. -->
-    <style name="AppTheme" parent="@android:style/Theme.Material.Light" />
+    <!-- No action bar: every screen draws its own header (Ui.header). -->
+    <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/canvas</item>
+        <item name="android:colorBackground">@color/canvas</item>
+        <item name="android:colorAccent">@color/ink</item>
+        <item name="android:textColorPrimary">@color/ink</item>
+        <item name="android:textColorSecondary">@color/muted</item>
+        <item name="android:textColorHint">@color/muted</item>
+        <item name="android:statusBarColor">@color/canvas</item>
+        <item name="android:navigationBarColor">@color/canvas</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowAnimationStyle">@style/ScreenAnim</item>
+    </style>
+
+    <style name="SheetDialog" parent="@android:style/Theme.Material.Light.Dialog.NoActionBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:backgroundDimAmount">0.4</item>
+        <item name="android:textColorPrimary">@color/ink</item>
+        <item name="android:textColorSecondary">@color/muted</item>
+        <item name="android:colorAccent">@color/ink</item>
+        <item name="android:windowAnimationStyle">@style/SheetAnim</item>
+    </style>
+
+    <!-- Screens glide in from the right and settle; they leave quicker than they arrive. -->
+    <style name="ScreenAnim" parent="@android:style/Animation.Activity">
+        <item name="android:activityOpenEnterAnimation">@anim/screen_in</item>
+        <item name="android:activityOpenExitAnimation">@anim/screen_back_out</item>
+        <item name="android:activityCloseEnterAnimation">@anim/screen_back_in</item>
+        <item name="android:activityCloseExitAnimation">@anim/screen_out</item>
+    </style>
+
+    <style name="SheetAnim">
+        <item name="android:windowEnterAnimation">@anim/sheet_in</item>
+        <item name="android:windowExitAnimation">@anim/sheet_out</item>
+    </style>
 </resources>

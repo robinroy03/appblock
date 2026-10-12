@@ -2,7 +2,7 @@ package com.robin.appblock
 
 import android.content.Context
 import android.content.Intent
-import android.widget.NumberPicker
+import android.widget.EditText
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
@@ -69,7 +69,7 @@ object E2e {
     fun openHome() {
         ctx.startActivity(Intent(ctx, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
-        check(device.wait(Until.hasObject(text("+ Block an app")), WAIT)) { "home screen didn't open" }
+        check(device.wait(Until.hasObject(text("Block an app")), WAIT)) { "home screen didn't open" }
     }
 
     /** Launch another app the way its launcher icon would, and wait for it to be in front. */
@@ -102,7 +102,7 @@ object E2e {
     fun appears(selector: BySelector, timeout: Long = WAIT): Boolean =
         device.wait(Until.hasObject(selector), timeout)
 
-    // ---- the limit dialog's wheels ----
+    // ---- the limit dialog ----
 
     /** Press OK on the limit dialog and wait for it to close. */
     fun pressOk() {
@@ -110,37 +110,10 @@ object E2e {
         check(device.wait(Until.gone(text("Set limit")), WAIT)) { "the limit dialog didn't close" }
     }
 
-    /** The Allow and in-any wheels, left to right. */
-    fun wheels(): List<UiObject2> {
-        waitFor(By.clazz(NumberPicker::class.java))
-        return device.findObjects(By.clazz(NumberPicker::class.java)).sortedBy { it.visibleBounds.left }
-    }
-
-    /** The value a wheel has selected, as shown ("15 min"). */
-    fun UiObject2.selected(): String = findObject(By.res("android", "numberpicker_input")).text
-
-    /** Tap the next value below the selected one (or above, for `up`): one step. */
-    fun UiObject2.step(up: Boolean = false) {
-        val b = visibleBounds
-        // A shell tap, not device.click(): that holds for 100 ms, and the
-        // wheel only steps on touches shorter than that (longer is a press).
-        val before = selected()
-        shell("input tap ${b.centerX()} ${if (up) b.top + b.height() / 6 else b.bottom - b.height() / 6}")
-        // Wait for the wheel to move off the old value (it won't at either
-        // end), then for its scroll to finish: a fixed pause was too short
-        // on CI's slower emulator.
-        val deadline = System.currentTimeMillis() + 2_000
-        while (selected() == before && System.currentTimeMillis() < deadline) Thread.sleep(50)
-        Thread.sleep(500)
-    }
-
-    /** Step a wheel until it shows `value`; fails if it never does. */
-    fun UiObject2.turnTo(value: String, up: Boolean) {
-        repeat(30) {
-            if (selected() == value) return
-            step(up)
-        }
-        throw AssertionError("wheel never reached $value (stuck at ${selected()})")
+    /** The Allow and in-any number fields, top to bottom. */
+    fun limitFields(): List<UiObject2> {
+        waitFor(By.clazz(EditText::class.java))
+        return device.findObjects(By.clazz(EditText::class.java)).sortedBy { it.visibleBounds.top }
     }
 
     /**
