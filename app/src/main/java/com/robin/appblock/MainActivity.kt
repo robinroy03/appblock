@@ -458,7 +458,7 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             text = Html.fromHtml(
                 "<a href=\"https://github.com/robinroy03/appblock\">Open source</a> under MIT. " +
-                    "Feedback? <a href=\"mailto:robinroy.work@gmail.com\">Email me</a>. " +
+                    "Feedback? <a href=\"mailto:support@robinroy.xyz\">Email me</a>. " +
                     "Made by <a href=\"https://x.com/_RobinRoy\">robin</a>.",
                 Html.FROM_HTML_MODE_LEGACY)
             movementMethod = LinkMovementMethod.getInstance()
