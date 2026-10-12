@@ -46,12 +46,25 @@ object E2e {
      */
     fun freshState(rules: Map<String, Rule> = emptyMap()) {
         val pkg = ctx.packageName
+        // A just-booted emulator (CI cold-boots one) can put "<app> isn't
+        // responding" over everything while the system catches up, hiding
+        // the screen under test. Don't show such dialogs; wait out one that's up.
+        shell("settings put global hide_error_dialogs 1")
+        if (device.findObject(textContains("isn't responding")) != null) {
+            device.findObject(text("Wait"))?.click()
+        }
         shell("appops set $pkg GET_USAGE_STATS allow")
         shell("appops set $pkg SYSTEM_ALERT_WINDOW allow")
         shell("dumpsys deviceidle whitelist +$pkg")
         shell("pm grant $pkg android.permission.POST_NOTIFICATIONS")
         device.findObject(text("Go to home screen"))?.click()
         for (app in listOf(CLOCK, CALENDAR)) shell("am force-stop $app")
+        // Stop the blocker before wiping: a session still open from the last
+        // test would otherwise be written into the wiped storage up to a
+        // second later ("1 min used" in a test that never opened the app).
+        // Stopping it writes the session now; the wipe then removes it.
+        ctx.stopService(Intent(ctx, BlockerService::class.java))
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
         ctx.getSharedPreferences("appblock", Context.MODE_PRIVATE).edit().clear().commit()
         Storage.setOnboardingSeen(ctx)
         Storage.saveRules(ctx, rules)
