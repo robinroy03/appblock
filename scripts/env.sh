@@ -13,5 +13,5 @@ ADB="$SDK/platform-tools/adb"
 # device that isn't an emulator.
 if [ -z "$ANDROID_SERIAL" ]; then
   PHONE=$("$ADB" devices | awk 'NR > 1 && $2 == "device" && $1 !~ /^emulator-/ { print $1; exit }')
-  [ -n "$PHONE" ] && export ANDROID_SERIAL="$PHONE"
+  if [ -n "$PHONE" ]; then export ANDROID_SERIAL="$PHONE"; fi
 fi
