@@ -70,6 +70,7 @@ class AppPickerActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Ui.edgeToEdge(window)
 
         val pm = packageManager
         val alreadyBlocked = Storage.loadRules(this).keys

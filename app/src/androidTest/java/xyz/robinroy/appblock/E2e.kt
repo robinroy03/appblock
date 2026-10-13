@@ -28,7 +28,7 @@ import java.util.regex.Pattern
 object E2e {
     // Stock apps on the emulator images (local and CI) used as "blocked apps".
     const val CLOCK = "com.google.android.deskclock"
-    const val CALENDAR = "com.google.android.calendar"
+    const val PHONE = "com.google.android.dialer"   // opens without a Google sign-in (Calendar on 16 doesn't)
 
     const val WAIT = 10_000L
 
@@ -58,7 +58,7 @@ object E2e {
         shell("dumpsys deviceidle whitelist +$pkg")
         shell("pm grant $pkg android.permission.POST_NOTIFICATIONS")
         device.findObject(text("Go to home screen"))?.click()
-        for (app in listOf(CLOCK, CALENDAR)) shell("am force-stop $app")
+        for (app in listOf(CLOCK, PHONE)) shell("am force-stop $app")
         // Stop the blocker before wiping: a session still open from the last
         // test would otherwise be written into the wiped storage up to a
         // second later ("1 min used" in a test that never opened the app).

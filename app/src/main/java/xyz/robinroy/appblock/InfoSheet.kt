@@ -52,6 +52,7 @@ class InfoSheet(private val host: Activity) : Dialog(host, R.style.SheetDialog) 
             setLayout(ViewGroup.LayoutParams.MATCH_PARENT, height)
             decorView.setPadding(0, 0, 0, 0)
             navigationBarColor = context.getColor(R.color.surface)
+            Ui.sheetEdgeToEdge(this, frame)
         }
     }
 

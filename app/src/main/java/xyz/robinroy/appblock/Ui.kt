@@ -3,14 +3,18 @@ package xyz.robinroy.appblock
 import android.app.Activity
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
+import android.os.Build
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
+import android.view.WindowInsets
 import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -34,6 +38,50 @@ object Ui {
 
     fun dp(context: Context, v: Int) = (v * context.resources.displayMetrics.density).toInt()
     fun dpf(context: Context, v: Float) = v * context.resources.displayMetrics.density
+
+    /**
+     * Lay the screen out behind the status and navigation bars, and pad its
+     * content clear of them (and of a display cutout or the keyboard). Apps
+     * targeting Android 15+ get the first half forced on them there; doing it
+     * from Android 11 up keeps every version alike. The canvas-colored window
+     * background shows through behind the bars.
+     */
+    fun edgeToEdge(window: Window) {
+        if (Build.VERSION.SDK_INT < 30) return
+        window.setDecorFitsSystemWindows(false)
+        @Suppress("DEPRECATION")
+        window.statusBarColor = Color.TRANSPARENT
+        @Suppress("DEPRECATION")
+        window.navigationBarColor = Color.TRANSPARENT
+        window.decorView.findViewById<View>(android.R.id.content).setOnApplyWindowInsetsListener { v, insets ->
+            val clear = insets.getInsets(WindowInsets.Type.systemBars() or
+                WindowInsets.Type.displayCutout() or WindowInsets.Type.ime())
+            v.setPadding(clear.left, clear.top, clear.right, clear.bottom)
+            WindowInsets.CONSUMED
+        }
+    }
+
+    /**
+     * A bottom sheet's window: reach down behind the navigation bar, and keep
+     * `content` (the view with the sheet's background) clear of it by adding
+     * to its bottom padding. Android 15+ ignores a navigation bar color, so
+     * this is how the sheet still meets the screen edge.
+     */
+    fun sheetEdgeToEdge(window: Window, content: View) {
+        if (Build.VERSION.SDK_INT < 30) return
+        // A dialog's window stops above the bars by default. Only the keyboard
+        // still pushes it up now; the navigation bar is padded for below.
+        window.attributes = window.attributes.apply { fitInsetsTypes = WindowInsets.Type.ime() }
+        window.setDecorFitsSystemWindows(false)
+        @Suppress("DEPRECATION")
+        window.navigationBarColor = Color.TRANSPARENT
+        val base = content.paddingBottom
+        content.setOnApplyWindowInsetsListener { v, insets ->
+            val nav = insets.getInsets(WindowInsets.Type.navigationBars()).bottom
+            v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, base + nav)
+            insets
+        }
+    }
 
     fun motionOn(context: Context): Boolean =
         Settings.Global.getFloat(

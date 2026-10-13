@@ -3,7 +3,7 @@ package xyz.robinroy.appblock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Until
-import xyz.robinroy.appblock.E2e.CALENDAR
+import xyz.robinroy.appblock.E2e.PHONE
 import xyz.robinroy.appblock.E2e.CLOCK
 import xyz.robinroy.appblock.E2e.appears
 import xyz.robinroy.appblock.E2e.device
@@ -85,10 +85,10 @@ class BlockingE2eTest {
         freshState(mapOf(CLOCK to Rule(allowMin = 1, windowMin = 120)))
         seedUsage(CLOCK, startAgo = 11.min, endAgo = 10.min, windowMin = 120)   // Clock: spent
 
-        openApp(CALENDAR)
+        openApp(PHONE)
 
         assertFalse(appears(textContains("is blocked"), timeout = 8_000))
-        assertEquals(CALENDAR, device.currentPackageName)
+        assertEquals(PHONE, device.currentPackageName)
     }
 
     @Test

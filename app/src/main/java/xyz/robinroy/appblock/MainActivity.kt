@@ -49,6 +49,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Ui.edgeToEdge(window)
 
         if (!Storage.onboardingSeen(this)) {
             startActivity(Intent(this, OnboardingActivity::class.java))

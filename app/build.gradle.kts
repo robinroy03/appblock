@@ -14,12 +14,12 @@ val keystoreProps = Properties().apply {
 
 android {
     namespace = "xyz.robinroy.appblock"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "xyz.robinroy.appblock"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 36
         versionCode = 11
         versionName = "1.0.2"
         // e2e tests (app/src/androidTest) drive the real app on a device.

@@ -14,6 +14,7 @@ class DontGiveUpActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Ui.edgeToEdge(window)
         title = "Don't give up"
 
         val ring = RingView(this, 10f)

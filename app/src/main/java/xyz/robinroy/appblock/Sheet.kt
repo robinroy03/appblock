@@ -47,6 +47,7 @@ class Sheet(host: Activity) : Dialog(host, R.style.SheetDialog) {
             setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
             decorView.setPadding(0, 0, 0, 0)
             navigationBarColor = context.getColor(R.color.surface)   // sheet reaches the screen edge
+            Ui.sheetEdgeToEdge(this, column)
         }
     }
 

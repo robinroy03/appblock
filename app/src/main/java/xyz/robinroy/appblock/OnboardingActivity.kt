@@ -4,6 +4,7 @@ import android.animation.ValueAnimator
 import android.app.Activity
 import android.content.Context
 import android.graphics.Outline
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.MotionEvent
@@ -17,6 +18,8 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -39,8 +42,16 @@ class OnboardingActivity : Activity() {
     private var shownLabelIndex = -1
     private val count = 4
 
+    // Back steps to the page before. Android 13+ dispatches back to callbacks
+    // registered ahead of time (16 stops calling onBackPressed), so this one
+    // is registered only off the first page; there back is the system's.
+    private val backToPage =
+        if (Build.VERSION.SDK_INT >= 33) OnBackInvokedCallback { pager.goTo(pager.page - 1) } else null
+    private var backToPageOn = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Ui.edgeToEdge(window)
         title = "Tie yourself to the mast"
 
         val pages = listOf(mastPage(), allowancePage(), wallPage(), privatePage())
@@ -96,6 +107,7 @@ class OnboardingActivity : Activity() {
         pager.onPosition = { pos ->
             activePill.translationX = pos * slot
             val index = pos.roundToInt().coerceIn(0, count - 1)
+            setBackToPage(index > 0)
             if (index != shownLabelIndex) {
                 shownLabelIndex = index
                 cta.label.text = if (index == count - 1) "Get started" else "Continue"
@@ -108,6 +120,15 @@ class OnboardingActivity : Activity() {
         pager.onPosition?.invoke(0f)
     }
 
+    private fun setBackToPage(on: Boolean) {
+        if (backToPage == null || on == backToPageOn) return
+        backToPageOn = on
+        if (on) onBackInvokedDispatcher.registerOnBackInvokedCallback(
+            OnBackInvokedDispatcher.PRIORITY_DEFAULT, backToPage)
+        else onBackInvokedDispatcher.unregisterOnBackInvokedCallback(backToPage)
+    }
+
+    /** Android 12 and older: back still comes here. */
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (pager.page > 0) pager.goTo(pager.page - 1)
