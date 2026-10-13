@@ -9,7 +9,7 @@
         android:shortcutShortLabel="@string/shortcut_dont_give_up">
         <intent
             android:action="android.intent.action.VIEW"
-            android:targetPackage="com.robin.appblock"
-            android:targetClass="com.robin.appblock.DontGiveUpActivity" />
+            android:targetPackage="xyz.robinroy.appblock"
+            android:targetClass="xyz.robinroy.appblock.DontGiveUpActivity" />
     </shortcut>
 </shortcuts>

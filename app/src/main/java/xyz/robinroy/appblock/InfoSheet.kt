@@ -1,4 +1,4 @@
-package com.robin.appblock
+package xyz.robinroy.appblock
 
 import android.app.Activity
 import android.app.Dialog

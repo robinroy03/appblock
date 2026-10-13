@@ -34,11 +34,11 @@ fi
 ./gradlew assembleDebug
 APK=app/build/outputs/apk/debug/app-debug.apk
 # A release build there (signed differently) refuses the update: replace it.
-"$ADB" install -r "$APK" || { "$ADB" uninstall com.robin.appblock; "$ADB" install "$APK"; }
+"$ADB" install -r "$APK" || { "$ADB" uninstall xyz.robinroy.appblock; "$ADB" install "$APK"; }
 
 # The required settings, granted directly instead of through their pages.
-"$ADB" shell appops set com.robin.appblock GET_USAGE_STATS allow
-"$ADB" shell appops set com.robin.appblock SYSTEM_ALERT_WINDOW allow
-"$ADB" shell dumpsys deviceidle whitelist +com.robin.appblock > /dev/null
-"$ADB" shell pm grant com.robin.appblock android.permission.POST_NOTIFICATIONS
+"$ADB" shell appops set xyz.robinroy.appblock GET_USAGE_STATS allow
+"$ADB" shell appops set xyz.robinroy.appblock SYSTEM_ALERT_WINDOW allow
+"$ADB" shell dumpsys deviceidle whitelist +xyz.robinroy.appblock > /dev/null
+"$ADB" shell pm grant xyz.robinroy.appblock android.permission.POST_NOTIFICATIONS
 echo "Ready: AppBlock is installed on $ANDROID_SERIAL."

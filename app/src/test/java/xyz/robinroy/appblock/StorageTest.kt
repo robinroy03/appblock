@@ -1,4 +1,4 @@
-package com.robin.appblock
+package xyz.robinroy.appblock
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

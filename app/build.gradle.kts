@@ -13,11 +13,11 @@ val keystoreProps = Properties().apply {
 }
 
 android {
-    namespace = "com.robin.appblock"
+    namespace = "xyz.robinroy.appblock"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.robin.appblock"
+        applicationId = "xyz.robinroy.appblock"
         minSdk = 26
         targetSdk = 34
         versionCode = 11

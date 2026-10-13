@@ -1,4 +1,4 @@
-package com.robin.appblock
+package xyz.robinroy.appblock
 
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
@@ -37,9 +37,9 @@ class ShortcutsTest {
 
     @Test
     fun `every shortcut targets a real activity in this app`() {
-        val declared = manifest.all("activity").map { "com.robin.appblock" + it.attr("name") }
+        val declared = manifest.all("activity").map { "xyz.robinroy.appblock" + it.attr("name") }
         for (intent in shortcuts.flatMap { it.all("intent") }) {
-            assertEquals("com.robin.appblock", intent.attr("targetPackage"))
+            assertEquals("xyz.robinroy.appblock", intent.attr("targetPackage"))
             val target = intent.attr("targetClass")
             Class.forName(target, false, javaClass.classLoader)  // throws if renamed
             assertTrue("$target missing from the manifest", target in declared)

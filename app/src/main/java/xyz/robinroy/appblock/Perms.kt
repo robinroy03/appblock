@@ -1,4 +1,4 @@
-package com.robin.appblock
+package xyz.robinroy.appblock
 
 import android.app.AppOpsManager
 import android.content.Context
@@ -36,5 +36,5 @@ fun missingRequirements(ctx: Context): List<Storage.Requirement> =
 
 fun allRequirementsMet(ctx: Context): Boolean = missingRequirements(ctx).isEmpty()
 
-/** "package:com.robin.appblock", the form the per-app Settings pages take. */
+/** "package:xyz.robinroy.appblock", the form the per-app Settings pages take. */
 fun packageUri(ctx: Context): Uri = Uri.parse("package:${ctx.packageName}")

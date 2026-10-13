@@ -12,7 +12,7 @@ cd "$(dirname "$0")/.."
 
 ./gradlew testDebugUnitTest assembleRelease
 cp app/build/outputs/apk/release/app-release.apk appblock.apk
-"$ADB" uninstall com.robin.appblock || true   # fine if it wasn't installed
+"$ADB" uninstall xyz.robinroy.appblock || true   # fine if it wasn't installed
 "$ADB" shell bmgr autorestore false
 trap '"$ADB" shell bmgr autorestore true' EXIT
 "$ADB" install appblock.apk
