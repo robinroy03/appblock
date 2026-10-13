@@ -85,9 +85,10 @@ don't wait to be asked; check with `git config core.hooksPath`):
    e2e tests look for (button text, a dialog), update the tests in
    `app/src/androidTest/` in the same commit.
 
-CI (`.github/workflows/ci.yml`) runs two jobs on every branch push: `test`
-(unit tests + compile) and `e2e` (the suite above on a fresh emulator). Check
-a push with `gh run list`; a failing e2e run uploads an `e2e-report`
+CI (`.github/workflows/ci.yml`) runs on every branch push: `test` (unit
+tests + compile), and the suite above on fresh emulators: `e2e` on Android 14
+and `e2e-android-16` on Android 16, the version the app targets. Check a
+push with `gh run list`; a failing e2e run uploads an `e2e-report-api-<level>`
 artifact with the HTML report, plus a screenshot and the device log for
 each failed test.
 
