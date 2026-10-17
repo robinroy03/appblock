@@ -20,8 +20,8 @@ android {
         applicationId = "xyz.robinroy.appblock"
         minSdk = 26
         targetSdk = 36
-        versionCode = 12
-        versionName = "1.0.3"
+        versionCode = 13
+        versionName = "2.0.0"
         // e2e tests (app/src/androidTest) drive the real app on a device.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
