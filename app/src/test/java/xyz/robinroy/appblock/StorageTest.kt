@@ -236,6 +236,127 @@ class StorageTest {
             Storage.foregroundFrom(listOf(paused(insta), resumed(insta)), insta))
     }
 
+    // ---- what's on screen, from the accessibility window list ----
+
+    private val yt = "com.google.android.youtube"
+    private val self = "xyz.robinroy.appblock"
+    private val screen = Storage.Bounds(0, 0, 1080, 2400)
+    private val top = Storage.Bounds(0, 0, 1080, 1180)
+    private val bottom = Storage.Bounds(0, 1220, 1080, 2400)
+    private val popup = Storage.Bounds(100, 600, 900, 1500)
+    private val statusBar = Storage.ScreenWindow(Storage.WindowKind.SYSTEM, Storage.Bounds(0, 0, 1080, 80))
+    private val navBar = Storage.ScreenWindow(Storage.WindowKind.SYSTEM, Storage.Bounds(0, 2340, 1080, 2400))
+    private fun app(pkg: String, b: Storage.Bounds) = Storage.ScreenWindow(Storage.WindowKind.APP, b, pkg)
+
+    @Test
+    fun `on screen - nothing, or only system windows`() {
+        assertEquals(emptyMap<String, Storage.Bounds>(), Storage.appsOnScreen(emptyList(), self))
+        assertEquals(emptyMap<String, Storage.Bounds>(), Storage.appsOnScreen(listOf(statusBar, navBar), self))
+    }
+
+    @Test
+    fun `on screen - one app full screen`() {
+        assertEquals(mapOf(insta to screen), Storage.appsOnScreen(listOf(app(insta, screen), statusBar), self))
+    }
+
+    @Test
+    fun `on screen - both halves of a split screen`() {
+        assertEquals(mapOf(insta to top, yt to bottom),
+            Storage.appsOnScreen(listOf(app(insta, top), app(yt, bottom), statusBar), self))
+    }
+
+    @Test
+    fun `on screen - a pop-up window over another app, or over home`() {
+        assertEquals(mapOf(yt to screen, insta to popup),
+            Storage.appsOnScreen(listOf(app(yt, screen), app(insta, popup)), self))
+        assertEquals(mapOf("com.android.launcher3" to screen, insta to popup),
+            Storage.appsOnScreen(listOf(app("com.android.launcher3", screen), app(insta, popup)), self))
+    }
+
+    @Test
+    fun `on screen - an app's windows merge into one area`() {
+        val dialog = Storage.Bounds(100, 900, 980, 1500)
+        assertEquals(mapOf(insta to screen), Storage.appsOnScreen(listOf(app(insta, screen), app(insta, dialog)), self))
+        // Two windows side by side: the area around both.
+        assertEquals(mapOf(insta to Storage.Bounds(0, 0, 1080, 2400)),
+            Storage.appsOnScreen(listOf(app(insta, top), app(insta, bottom)), self))
+    }
+
+    @Test
+    fun `on screen - AppBlock itself, and windows of no app, don't count`() {
+        assertEquals(mapOf(insta to top), Storage.appsOnScreen(listOf(
+            app(insta, top), app(self, bottom),
+            Storage.ScreenWindow(Storage.WindowKind.APP, bottom, pkg = null),
+            Storage.ScreenWindow(Storage.WindowKind.OTHER, screen, pkg = yt)), self))
+    }
+
+    @Test
+    fun `system on top - the pulled-down shade or power menu, not the bars or keyboard`() {
+        assertFalse(Storage.systemOnTop(listOf(app(insta, screen), statusBar, navBar), 2400))
+        assertFalse(Storage.systemOnTop(listOf(app(insta, screen),
+            Storage.ScreenWindow(Storage.WindowKind.OTHER, Storage.Bounds(0, 1400, 1080, 2400))), 2400))
+        assertFalse(Storage.systemOnTop(listOf(app(insta, screen),
+            Storage.ScreenWindow(Storage.WindowKind.SYSTEM, Storage.Bounds(0, 0, 1080, 1200))), 2400))
+        assertTrue(Storage.systemOnTop(listOf(app(insta, screen),
+            Storage.ScreenWindow(Storage.WindowKind.SYSTEM, screen)), 2400))
+    }
+
+    @Test
+    fun `on screen after - apps under the pulled-down shade stay as they were`() {
+        val before = mapOf(insta to top, yt to bottom)
+        val shade = Storage.ScreenWindow(Storage.WindowKind.SYSTEM, screen)
+        // The shade hides them from the window list; they're still open underneath.
+        assertEquals(before, Storage.onScreenAfter(listOf(shade), self, 2400, before))
+        // Shade closed again: a fresh read.
+        assertEquals(mapOf(insta to screen),
+            Storage.onScreenAfter(listOf(app(insta, screen), statusBar), self, 2400, before))
+        // No windows at all (screen off) is a fresh read too: nothing on screen.
+        assertEquals(emptyMap<String, Storage.Bounds>(), Storage.onScreenAfter(emptyList(), self, 2400, before))
+    }
+
+    @Test
+    fun `wall - the app's area, leaving the status bar uncovered`() {
+        assertEquals(Storage.Bounds(0, 80, 1080, 2400), Storage.wallBounds(screen, listOf(statusBar, navBar), 2400))
+        // The bottom half of a split and a pop-up are clear of it already.
+        assertEquals(bottom, Storage.wallBounds(bottom, listOf(statusBar, navBar), 2400))
+        assertEquals(popup, Storage.wallBounds(popup, listOf(statusBar), 2400))
+        // No status bar (a full-screen video hides it) -> all of it.
+        assertEquals(screen, Storage.wallBounds(screen, listOf(navBar), 2400))
+        // A big system window at the top isn't the status bar.
+        assertEquals(screen, Storage.wallBounds(screen,
+            listOf(Storage.ScreenWindow(Storage.WindowKind.SYSTEM, Storage.Bounds(0, 0, 1080, 1200))), 2400))
+        // A window entirely under the status bar keeps its own area rather than none.
+        val sliver = Storage.Bounds(0, 0, 1080, 60)
+        assertEquals(sliver, Storage.wallBounds(sliver, listOf(statusBar), 2400))
+    }
+
+    @Test
+    fun `plan - spent apps walled, other limited apps timed, the rest left alone`() {
+        val rules = mapOf(insta to Rule(5, 120), yt to Rule(10, 60))
+        val spent = setOf(insta)
+        val plan = Storage.plan(listOf(insta, yt, "com.android.launcher3"), rules) { pkg, _ -> pkg in spent }
+        assertEquals(setOf(insta), plan.walled)
+        assertEquals(setOf(yt), plan.timed)
+        // Both spent -> both walled, nothing timed.
+        assertEquals(Storage.Plan(setOf(insta, yt), emptySet()),
+            Storage.plan(listOf(insta, yt), rules) { _, _ -> true })
+        // Nothing on screen -> nothing to do.
+        assertEquals(Storage.Plan(emptySet(), emptySet()), Storage.plan(emptyList(), rules) { _, _ -> true })
+    }
+
+    @Test
+    fun `accessibility setting - finds our service in either spelling, among others`() {
+        val cls = "xyz.robinroy.appblock.BlockerService"
+        assertTrue(Storage.serviceEnabled("xyz.robinroy.appblock/xyz.robinroy.appblock.BlockerService", self, cls))
+        assertTrue(Storage.serviceEnabled("xyz.robinroy.appblock/.BlockerService", self, cls))
+        assertTrue(Storage.serviceEnabled(
+            "com.google.android.marvin.talkback/.TalkBackService:xyz.robinroy.appblock/.BlockerService", self, cls))
+        assertFalse(Storage.serviceEnabled(null, self, cls))
+        assertFalse(Storage.serviceEnabled("", self, cls))
+        assertFalse(Storage.serviceEnabled("com.google.android.marvin.talkback/.TalkBackService", self, cls))
+        assertFalse(Storage.serviceEnabled("xyz.robinroy.appblock/.OtherService", self, cls))
+    }
+
     @Test
     fun `picker durations - minutes, whole hours, mixed`() {
         assertEquals("0m", Storage.fmtDuration(0))

@@ -82,6 +82,96 @@ object Storage {
         return fg
     }
 
+    // ---- what's on screen, from the accessibility service's window list ----
+
+    /** A rectangle in screen pixels (Android's Rect doesn't run in unit tests). */
+    data class Bounds(val left: Int, val top: Int, val right: Int, val bottom: Int) {
+        val height get() = bottom - top
+        fun union(o: Bounds) =
+            Bounds(minOf(left, o.left), minOf(top, o.top), maxOf(right, o.right), maxOf(bottom, o.bottom))
+    }
+
+    /** What a window on screen is: an app's, the system's (status bar, shade, power menu), or other (keyboard, overlays). */
+    enum class WindowKind { APP, SYSTEM, OTHER }
+
+    /** One window on screen. `pkg` is only known for app windows. */
+    data class ScreenWindow(val kind: WindowKind, val bounds: Bounds, val pkg: String? = null)
+
+    /**
+     * The apps on screen and the area each one covers. Every app window
+     * counts, not just the one in front: both halves of a split screen and a
+     * floating pop-up window are on screen together. An app with several
+     * windows (a dialog over it) gets the area around all of them. AppBlock's
+     * own windows are skipped.
+     */
+    fun appsOnScreen(windows: List<ScreenWindow>, self: String): Map<String, Bounds> {
+        val out = mutableMapOf<String, Bounds>()
+        for (w in windows) {
+            val pkg = w.pkg ?: continue
+            if (w.kind != WindowKind.APP || pkg == self) continue
+            out[pkg] = out[pkg]?.union(w.bounds) ?: w.bounds
+        }
+        return out
+    }
+
+    /**
+     * Whether a system window is over most of the screen: the notification
+     * shade pulled down, or the power menu. The walls step aside for it (it
+     * would otherwise be under them), and come back when it closes.
+     */
+    fun systemOnTop(windows: List<ScreenWindow>, screenHeight: Int): Boolean =
+        windows.any { it.kind == WindowKind.SYSTEM && it.bounds.height > screenHeight / 2 }
+
+    /**
+     * The apps on screen after a fresh read of the window list. A system
+     * window over most of the screen hides the apps under it from the list,
+     * but they're still open there (and still counting), so they're kept as
+     * they were until it closes.
+     */
+    fun onScreenAfter(windows: List<ScreenWindow>, self: String, screenHeight: Int,
+                      previous: Map<String, Bounds>): Map<String, Bounds> =
+        if (systemOnTop(windows, screenHeight)) previous else appsOnScreen(windows, self)
+
+    /**
+     * Where the wall goes over an app: its whole area, except where it runs
+     * under the status bar (a thin system window along the top). The wall
+     * sits above every other window, so covering the status bar would keep
+     * the notification shade from being pulled down.
+     */
+    fun wallBounds(app: Bounds, windows: List<ScreenWindow>, screenHeight: Int): Bounds {
+        val statusBar = windows.filter {
+            it.kind == WindowKind.SYSTEM && it.bounds.top <= 0 && it.bounds.height in 1 until screenHeight / 8
+        }.maxOfOrNull { it.bounds.bottom } ?: 0
+        val top = maxOf(app.top, statusBar)
+        return if (top < app.bottom) app.copy(top = top) else app
+    }
+
+    /** What to do about the apps on screen: wall the ones whose budget is spent, time the other limited ones. */
+    data class Plan(val walled: Set<String>, val timed: Set<String>)
+
+    fun plan(onScreen: Collection<String>, rules: Map<String, Rule>, spent: (String, Rule) -> Boolean): Plan {
+        val walled = mutableSetOf<String>()
+        val timed = mutableSetOf<String>()
+        for (pkg in onScreen) {
+            val rule = rules[pkg] ?: continue
+            if (spent(pkg, rule)) walled += pkg else timed += pkg
+        }
+        return Plan(walled, timed)
+    }
+
+    /**
+     * Whether Settings' list of enabled accessibility services (the
+     * colon-separated `enabled_accessibility_services` value) has ours in it.
+     * Entries name the class in full or relative to the package
+     * ("xyz.robinroy.appblock/.BlockerService").
+     */
+    fun serviceEnabled(setting: String?, pkg: String, cls: String): Boolean =
+        !setting.isNullOrEmpty() && setting.split(':').any { entry ->
+            val name = entry.trim()
+            name.equals("$pkg/$cls", ignoreCase = true) ||
+                name.equals("$pkg/" + cls.removePrefix(pkg), ignoreCase = true)
+        }
+
     // Usage-warning thresholds, as percent of the allowance.
     private val WARN_THRESHOLDS = listOf(50, 90)
 
