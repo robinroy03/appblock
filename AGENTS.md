@@ -1,9 +1,9 @@
 # AGENTS.md
 
-AppBlock is a small Android app-blocker: a foreground service polls the system
-usage-event log for the foreground app (via "Usage access") and draws a block
-wall over it ("Display over other apps") when a blocked app exceeds its time
-budget. No accessibility service.
+AppBlock is a small Android app-blocker: an accessibility service watches
+which apps are on screen (the window list, split screen and pop-ups included)
+and draws a block wall over a limited app's window once it exceeds its time
+budget. "Usage access" is optional, for screen-time stats only.
 Plain Kotlin + Gradle, no Android Studio required.
 
 ## Tests come with every change
@@ -133,8 +133,8 @@ scripts/emulator.sh --window   # same, with the emulator window visible
 
 An Android 14 emulator (a Pixel 7, like the test phone's screen) whose
 virtual device lives in `.avd/` (gitignored). It installs the current debug
-build and grants usage access, display-over-apps, the battery exemption and
-notifications via adb, so the home list is live straight away. Prefer it for
+build and switches on the blocker's accessibility service, the battery
+exemption, usage access and notifications via adb, so the home list is live straight away. Prefer it for
 checking UI changes; use the phone for what the emulator can't tell you
 (haptics, OxygenOS behaviour). With both connected, the scripts target the
 phone; set `ANDROID_SERIAL=emulator-5554` to point one at the emulator.

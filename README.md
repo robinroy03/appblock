@@ -12,12 +12,17 @@ to a "blocked, try again in N min" screen.
 
 No dependencies, no network, no analytics. Everything stays on your phone.
 
-No accessibility service either: the blocker needs only "Usage access" (to see
-which app is in front) and "Display over other apps" (to draw the wall), plus a
-battery exemption so the phone doesn't put it to sleep. It runs as a foreground
-service, so a small "AppBlock is on duty" line sits in your notification shade.
-While you're in a limited app, that same line turns into the app's countdown
-(and its 50%/90% warnings), so AppBlock never shows more than one notification.
+The blocker is an accessibility service: Android tells it which apps are on
+screen (split screen and pop-up windows included) and lets it draw the wall over
+one whose time is up. It only looks at which app each window belongs to, never at
+what's inside. Besides switching it on in Settings > Accessibility, it needs a
+battery exemption so the phone doesn't put it to sleep. Usage access is optional,
+for screen-time numbers. While a limited app is on screen, a notification counts
+down its time (with 50%/90% warnings); two limited apps side by side get one each.
+
+Installing the APK from GitHub on Android 13 or later? Android greys out the
+Accessibility switch for apps from outside an app store until you allow it: open
+AppBlock's App info, tap ⋮, choose "Allow restricted settings", then switch it on.
 
 ## Tie yourself to the mast
 
@@ -45,8 +50,11 @@ enough to check in, never enough to drown.
 **Blocked during a block window:**
 
 - **Opening the app:** from the launcher, recents, widgets, share sheet, links,
-  anything. Within about a second of the app's window hitting the foreground the
-  block wall covers it, with a button to go home.
+  anything. The moment the app's window shows up, the block wall covers it, with
+  a button to go home.
+- **Split screen and pop-up windows:** the wall covers just that app's window,
+  so the other half of the screen, or the home screen around a pop-up, stays
+  usable. Each limited app on screen uses up its own budget.
 - **Tapping one of its notifications:** the notification arrives and is readable,
   but tapping it opens the app → blocked like any other open.
 - **Overstaying:** if you're mid-scroll when the budget runs out (checked every
@@ -66,7 +74,7 @@ enough to check in, never enough to drown.
   appears, but the full-screen incoming-call UI is the app's window. Answering
   while the app is over budget will likely get bounced. Think twice before
   blocking an app you take calls on.
-- **Picture-in-picture** mini-players keep working; entering the app to start one
-  is blocked regardless.
+- **Picture-in-picture** mini-players are on screen, so they count and get
+  walled like a pop-up; entering the app to start one is blocked regardless.
 - A blocked app's content shown _inside another app_ (e.g. a YouTube video
   embedded in a browser) is not blocked. Only the app's own windows are.
