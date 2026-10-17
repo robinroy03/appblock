@@ -9,6 +9,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Configurator
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -126,10 +127,18 @@ object E2e {
         check(device.wait(Until.hasObject(By.pkg(pkg)), WAIT)) { "$pkg didn't open" }
     }
 
-    /** Open `pkg` beside the app in front, in split screen (it takes the bottom half). */
+    /**
+     * Open `pkg` beside the app in front, in split screen (it takes the
+     * bottom half). Returns once its window is in its half on screen: the
+     * window manager calls the task visible as the move starts, before the
+     * windows settle, and a test that pulls down the shade by then hides
+     * the split from the blocker until the shade closes.
+     */
     fun splitScreenWith(pkg: String) {
         shell("dumpsys activity service SystemUIService WMShell splitscreen moveToSideStage ${taskId(pkg)} 1")
-        check(eventually { isOnScreen(pkg) }) { "$pkg didn't open in split screen" }
+        check(eventually {
+            device.findObject(By.pkg(pkg))?.let { windowBounds(it).top > device.displayHeight / 3 } ?: false
+        }) { "$pkg didn't open in split screen" }
     }
 
     /**
@@ -152,11 +161,15 @@ object E2e {
     fun isOnScreen(pkg: String): Boolean =
         shell("am stack list").lines().any { it.contains(Regex("taskId=\\d+: ${Regex.escape(pkg)}/")) && "visible=true" in it }
 
-    /** Whether `condition` holds within `timeout`, checked every quarter second. */
+    /**
+     * Whether `condition` holds within `timeout`, checked every quarter
+     * second. A check that reads the screen as it changes (a window
+     * replaced mid-read) just counts as not yet.
+     */
     fun eventually(timeout: Long = WAIT, condition: () -> Boolean): Boolean {
         val deadline = System.currentTimeMillis() + timeout
         while (true) {
-            if (condition()) return true
+            if (try { condition() } catch (e: StaleObjectException) { false }) return true
             if (System.currentTimeMillis() > deadline) return false
             Thread.sleep(250)
         }
