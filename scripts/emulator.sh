@@ -1,8 +1,8 @@
 #!/bin/sh -e
 # Test on an emulator instead of the phone: boots an Android 14 emulator
 # (creating it on first run), installs the current debug build on it (the
-# build the e2e tests use), and grants AppBlock's required settings so the
-# home list is live straight away.
+# build the e2e tests use), and switches on AppBlock's settings so the home
+# list is live straight away.
 #
 #   scripts/emulator.sh            headless; drive it with adb
 #   scripts/emulator.sh --window   with the emulator window on screen
@@ -36,9 +36,13 @@ APK=app/build/outputs/apk/debug/app-debug.apk
 # A release build there (signed differently) refuses the update: replace it.
 "$ADB" install -r "$APK" || { "$ADB" uninstall xyz.robinroy.appblock; "$ADB" install "$APK"; }
 
-# The required settings, granted directly instead of through their pages.
+# The settings, granted directly instead of through their pages: the
+# blocker's accessibility service, the battery exemption, and the optional
+# usage access and notifications.
+"$ADB" shell settings put secure enabled_accessibility_services \
+  xyz.robinroy.appblock/xyz.robinroy.appblock.BlockerService
+"$ADB" shell settings put secure accessibility_enabled 1
 "$ADB" shell appops set xyz.robinroy.appblock GET_USAGE_STATS allow
-"$ADB" shell appops set xyz.robinroy.appblock SYSTEM_ALERT_WINDOW allow
 "$ADB" shell dumpsys deviceidle whitelist +xyz.robinroy.appblock > /dev/null
 "$ADB" shell pm grant xyz.robinroy.appblock android.permission.POST_NOTIFICATIONS
 echo "Ready: AppBlock is installed on $ANDROID_SERIAL."

@@ -26,12 +26,13 @@ object Guides {
                 "one sitting."),
         Point(R.drawable.ic_wall, "A wall when the time is gone",
             "Opening the app, tapping its notification, or staying in it past the limit " +
-                "covers it with a full-screen wall and a button home. AppBlock looks about " +
-                "once a second, and again every few seconds while you are still in the app."),
-        Point(R.drawable.ic_bell, "A warning before the wall",
-            "With notifications on, you get a note at halfway and again near the end. Only " +
-                "one note shows at a time. While you are in a limited app, that note " +
-                "becomes a countdown."),
+                "covers it with a wall and a button home. In split screen or a pop-up " +
+                "window, the wall covers just that app, so the rest of the screen still " +
+                "works. AppBlock sees an app the moment it opens, and checks again every " +
+                "few seconds while it stays on screen."),
+        Point(R.drawable.ic_bell, "A countdown before the wall",
+            "With notifications on, each limited app on screen gets a countdown of its " +
+                "time left, which turns into a warning at halfway and again near the end."),
         Point(R.drawable.ic_shield, "What it leaves alone",
             "Notifications still arrive, and replies from the notification still work. " +
                 "Messages, downloads, and audio keep running. Only time on screen counts. " +

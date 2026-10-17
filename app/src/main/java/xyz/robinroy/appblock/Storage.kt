@@ -61,27 +61,6 @@ object Storage {
     fun timerNeedsRepost(shownDeadline: Long?, deadline: Long, shownLevel: Int, level: Int): Boolean =
         shownDeadline == null || Math.abs(deadline - shownDeadline) >= 1_000 || level != shownLevel
 
-    /** One "activity resumed"/"activity paused" entry from the system usage-event log. */
-    data class UsageEvent(val resumed: Boolean, val pkg: String)
-
-    /**
-     * Which app is in front after `events` (in time order), starting from
-     * `previous`. A resume puts its app in front. A pause only clears the
-     * front app if it's for that same app — on an app switch Android logs
-     * the old app's pause and the new app's resume in either order, and a
-     * pause of the app that just lost the foreground must not blank out the
-     * one that gained it. A pause with no resume after it (screen off, lock
-     * screen) leaves nothing in front.
-     */
-    fun foregroundFrom(events: List<UsageEvent>, previous: String?): String? {
-        var fg = previous
-        for (e in events) {
-            if (e.resumed) fg = e.pkg
-            else if (fg == e.pkg) fg = null
-        }
-        return fg
-    }
-
     // ---- what's on screen, from the accessibility service's window list ----
 
     /** A rectangle in screen pixels (Android's Rect doesn't run in unit tests). */
@@ -232,9 +211,8 @@ object Storage {
      * own user-facing copy, and every surface generates itself from this
      * list: the home screen's "(required)" buttons with their why-blurbs, the
      * "Block an app" guard sheet, the About permissions rows. Declaration
-     * order is fix-first priority (seeing the foreground app before drawing
-     * over it — the core mechanism first). A future requirement is one entry
-     * here plus a branch in requirementMet() (Perms.kt) and MainActivity's
+     * order is fix-first priority (the blocker itself first). A future
+     * requirement is one entry here plus a branch in requirementMet() (Perms.kt) and MainActivity's
      * requirementFix(); those `when`s are exhaustive, so forgetting one is a
      * compile error, not a stale screen.
      */
@@ -245,22 +223,15 @@ object Storage {
         val why: String,       // friendly explanation: home blurb + guard popup
         val permsNote: String, // one-liner under the About permissions row
     ) {
-        USAGE_ACCESS(
-            "Usage access",
-            "Allow usage access (required)",
-            "usage access",
-            "That's how AppBlock sees which app you're using, so it knows " +
-                "when your time in one is up. It also shows your screen " +
-                "time next to each app in the picker.",
-            "Required. Sees which app is open."),
-        OVERLAY(
-            "Display over other apps",
-            "Allow display over other apps (required)",
-            "display over other apps",
-            "The block wall is drawn on top of the app you've run out of " +
-                "time in. Without this, AppBlock can see you're over budget " +
-                "but can't show you the wall.",
-            "Required. Draws the block wall over the blocked app."),
+        ACCESSIBILITY(
+            "Accessibility",
+            "Turn on AppBlock in Accessibility (required)",
+            "accessibility",
+            "That's how AppBlock sees which apps are on screen, split " +
+                "screen and pop-up windows included, and how it puts the " +
+                "wall over one whose time is up. It only looks at which app " +
+                "each window belongs to, never at what's inside it.",
+            "Required. Sees which apps are on screen and draws the wall."),
         BATTERY(
             "Unrestricted battery",
             "Allow background battery use (required)",

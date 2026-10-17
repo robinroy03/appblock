@@ -1,5 +1,6 @@
 package xyz.robinroy.appblock
 
+import android.app.UiAutomation
 import android.content.Context
 import android.content.Intent
 import android.util.Log
@@ -7,6 +8,7 @@ import android.widget.EditText
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.Configurator
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -26,6 +28,13 @@ import java.util.regex.Pattern
  * also sees other apps and the block wall drawn over them.
  */
 object E2e {
+    init {
+        // UI Automator is an accessibility client too, and by default
+        // switches every other accessibility service off while it runs:
+        // the blocker included.
+        Configurator.getInstance().uiAutomationFlags = UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES
+    }
+
     // Stock apps on the emulator images (local and CI) used as "blocked apps".
     const val CLOCK = "com.google.android.deskclock"
     const val PHONE = "com.google.android.dialer"   // opens without a Google sign-in (Calendar on 16 doesn't)
@@ -38,6 +47,29 @@ object E2e {
     val Int.min get() = this * 60_000L
 
     fun shell(cmd: String): String = device.executeShellCommand(cmd)
+
+    /** For direct window queries; with the flag that leaves the blocker running (see init). */
+    val uiAutomation: UiAutomation
+        get() = InstrumentationRegistry.getInstrumentation()
+            .getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
+
+    /**
+     * Switch the blocker's accessibility service on or off, as the user
+     * would in Settings > Accessibility, and wait until it has connected or
+     * gone. Switching it off logs any open session.
+     */
+    fun setBlocker(on: Boolean) {
+        if (on) {
+            shell("settings put secure enabled_accessibility_services " +
+                "${ctx.packageName}/${BlockerService::class.java.name}")
+            shell("settings put secure accessibility_enabled 1")
+        } else {
+            shell("settings delete secure enabled_accessibility_services")
+        }
+        check(eventually { (BlockerService.instance != null) == on }) {
+            "the blocker didn't switch ${if (on) "on" else "off"}"
+        }
+    }
 
     /**
      * Every required setting on, notifications allowed, onboarding seen, the
@@ -54,21 +86,20 @@ object E2e {
             device.findObject(text("Wait"))?.click()
         }
         shell("appops set $pkg GET_USAGE_STATS allow")
-        shell("appops set $pkg SYSTEM_ALERT_WINDOW allow")
         shell("dumpsys deviceidle whitelist +$pkg")
         shell("pm grant $pkg android.permission.POST_NOTIFICATIONS")
         device.findObject(text("Go to home screen"))?.click()
         for (app in listOf(CLOCK, PHONE)) shell("am force-stop $app")
-        // Stop the blocker before wiping: a session still open from the last
-        // test would otherwise be written into the wiped storage up to a
-        // second later ("1 min used" in a test that never opened the app).
-        // Stopping it writes the session now; the wipe then removes it.
-        ctx.stopService(Intent(ctx, BlockerService::class.java))
+        // Switch the blocker off before wiping: a session still open from the
+        // last test would otherwise be written into the wiped storage a few
+        // seconds later ("1 min used" in a test that never opened the app).
+        // Switching it off writes the session now; the wipe then removes it.
+        setBlocker(false)
         InstrumentationRegistry.getInstrumentation().waitForIdleSync()
         ctx.getSharedPreferences("appblock", Context.MODE_PRIVATE).edit().clear().commit()
         Storage.setOnboardingSeen(ctx)
         Storage.saveRules(ctx, rules)
-        // Opening the home screen starts the blocker (as it does for a user).
+        setBlocker(true)
         openHome()
         device.pressHome()
         device.waitForIdle()
@@ -93,6 +124,49 @@ object E2e {
         val launcher = ctx.packageManager.getLaunchIntentForPackage(pkg)!!.component!!
         shell("am start -W -n ${launcher.flattenToShortString()}")
         check(device.wait(Until.hasObject(By.pkg(pkg)), WAIT)) { "$pkg didn't open" }
+    }
+
+    /** Open `pkg` beside the app in front, in split screen (it takes the bottom half). */
+    fun splitScreenWith(pkg: String) {
+        shell("dumpsys activity service SystemUIService WMShell splitscreen moveToSideStage ${taskId(pkg)} 1")
+        check(eventually { isOnScreen(pkg) }) { "$pkg didn't open in split screen" }
+    }
+
+    /**
+     * Open `pkg` in a floating pop-up window over what's on screen (the
+     * emulator's "freeform" windows; OxygenOS and others call theirs pop-ups).
+     */
+    fun openAsPopUp(pkg: String) {
+        shell("settings put global enable_freeform_support 1")
+        val launcher = ctx.packageManager.getLaunchIntentForPackage(pkg)!!.component!!
+        shell("am start -W --windowingMode 5 -n ${launcher.flattenToShortString()}")
+        check(eventually { isOnScreen(pkg) }) { "$pkg didn't open as a pop-up" }
+    }
+
+    /** The task `pkg` runs in. */
+    private fun taskId(pkg: String): Int =
+        Regex("taskId=(\\d+): ${Regex.escape(pkg)}/").find(shell("am stack list"))
+            ?.groupValues?.get(1)?.toInt() ?: throw AssertionError("$pkg has no task")
+
+    /** Whether `pkg` has a visible window, per the window manager. */
+    fun isOnScreen(pkg: String): Boolean =
+        shell("am stack list").lines().any { it.contains(Regex("taskId=\\d+: ${Regex.escape(pkg)}/")) && "visible=true" in it }
+
+    /** Whether `condition` holds within `timeout`, checked every quarter second. */
+    fun eventually(timeout: Long = WAIT, condition: () -> Boolean): Boolean {
+        val deadline = System.currentTimeMillis() + timeout
+        while (true) {
+            if (condition()) return true
+            if (System.currentTimeMillis() > deadline) return false
+            Thread.sleep(250)
+        }
+    }
+
+    /** The bounds of the whole window `obj` sits in (e.g. the block wall). */
+    fun windowBounds(obj: UiObject2): android.graphics.Rect {
+        var root = obj
+        while (root.parent != null) root = root.parent
+        return root.visibleBounds
     }
 
     /**
@@ -149,7 +223,7 @@ object E2e {
             // From the shell: it can write the output directory, the app can't.
             shell("mkdir -p $dir")
             shell("screencap -p $dir/$name.png")
-            shell("dumpsys activity services ${ctx.packageName}").lines()
+            shell("dumpsys accessibility").lines()
                 .forEach { Log.i("E2eFailure", it) }
             shell("logcat -d -v time -f $dir/$name.logcat.txt")
         }

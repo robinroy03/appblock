@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Heads-up notifications at 50%/90% of an app's usage allowance -->
+    <!-- The countdowns while a limited app is on screen, with their 50%/90% warnings -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Android 16 QPR1+: lets the session countdown be a "Live Update"
@@ -15,33 +15,27 @@
          aggressive OEM battery savers (OxygenOS etc.) don't kill the blocker -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
-    <!-- How the blocker sees which app is in front (usage events), plus
-         screen-time stats in the app picker; granted via the "Usage access"
-         settings page, never a runtime prompt -->
+    <!-- Optional: screen-time stats on the home list and in the app picker;
+         granted via the "Usage access" settings page, never a runtime
+         prompt. Blocking doesn't need it. -->
     <uses-permission
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
 
-    <!-- The block wall is an overlay window drawn over the blocked app;
-         granted via the "Display over other apps" settings page -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-
-    <!-- The blocker is a foreground service (Android's only way to keep a
-         poller alive); "special use" is the type for things like this -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-
     <!-- The tick as the limit dialog's steppers change -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- Restart the blocker after a reboot -->
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-
-    <!-- Lets us list all launchable apps on Android 11+ -->
+    <!-- Lets us list all launchable apps on Android 11+, and find the
+         launcher (the block wall leaves out its home button over a pop-up,
+         where the home screen is already showing) -->
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
         </intent>
     </queries>
 
@@ -82,26 +76,22 @@
             android:exported="false"
             android:label="Don't give up!" />
 
-        <!-- The blocker: polls usage events for the foreground app and draws
-             the block-wall overlay itself. -->
+        <!-- The blocker: an accessibility service that sees which apps are on
+             screen and draws the block wall over a spent one. Only the
+             system may bind to it (the permission); the user switches it on
+             in Settings > Accessibility, and the system keeps it running
+             and brings it back after a reboot or an update. -->
         <service
             android:name=".BlockerService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Watches which app is in the foreground to enforce the user's own screen-time limits" />
-        </service>
-
-        <!-- Boot / in-place update: bring the blocker back. Both actions are
-             protected system broadcasts, so exported is safe here. -->
-        <receiver
-            android:name=".BootReceiver"
-            android:exported="true">
+            android:exported="true"
+            android:label="AppBlock"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
-        </receiver>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/blocker_service" />
+        </service>
     </application>
 </manifest>

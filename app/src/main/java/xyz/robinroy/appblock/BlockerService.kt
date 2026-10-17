@@ -1,277 +1,245 @@
 package xyz.robinroy.appblock
 
+import android.accessibilityservice.AccessibilityService
+import android.app.KeyguardManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.app.Service
-import android.app.usage.UsageEvents
-import android.app.usage.UsageStatsManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
-import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
-import android.provider.Settings
 import android.text.SpannableString
 import android.text.style.AbsoluteSizeSpan
 import android.text.style.ForegroundColorSpan
+import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Gravity
+import android.view.View
 import android.view.WindowManager
+import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * The enforcer: a foreground service that polls the system's usage-event log
- * once a second (while the screen is on) to learn which app is in front.
- * "Usage access" grants that read; nothing else can tell a non-accessibility
- * app about foreground changes, so this has to keep running, and Android
- * demands a small ongoing notification for that. While a rule-listed app is
- * in the foreground we also tick every few seconds, so a session gets cut
- * off the moment its budget runs out.
+ * The enforcer: an accessibility service. Android tells it the moment any
+ * window on screen changes, and hands it the list of windows with the app
+ * each belongs to and where it is. That's every app on screen, not just the
+ * one in front: both halves of a split screen, a floating pop-up window.
+ * The service reads only that (which app, where), never what's inside.
  *
- * AppBlock only ever shows that one notification: "on duty" while nothing
- * tracked is in front, swapped for the tracked app's countdown (with the
- * 50%/90% warnings in its text) while one is.
+ * Each limited app on screen gets its own session and its own countdown
+ * notification, ticked every few seconds so a session is cut off the moment
+ * its budget runs out. A spent app gets a block wall over its window, and
+ * only its window: the rest of the screen (the other half of a split, the
+ * home screen under a pop-up) stays usable. The wall is an accessibility
+ * overlay window, which this service may draw without "Display over other
+ * apps".
  *
- * The block wall is an overlay window drawn by this service directly over
- * the blocked app ("Display over other apps", TYPE_APPLICATION_OVERLAY) —
- * NOT an Activity. Activities launched from a background service get
- * silently dropped or queued by Android 10+ background-launch restrictions;
- * an overlay appears instantly and reliably.
+ * The system keeps an enabled accessibility service running, and starts it
+ * again after a reboot or an update, so there's no foreground service and
+ * no "on duty" notification.
  */
-class BlockerService : Service() {
+class BlockerService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
-    private var foreground: String? = null   // whatever app is in front, tracked or not
-    private var currentPkg: String? = null   // rule-listed app currently in foreground
-    private var sessionStart = 0L
     private val tickMs = 5_000L
-    private val pollMs = 1_000L
-    // The first poll after (re)start looks far back to find the app already
-    // in front; every later poll replays just the last couple of seconds
-    // (replaying an event twice is harmless: the fold ends in the same state).
-    private var lookbackMs = 12 * 3_600_000L
-    private var polling = false
 
-    private var overlay: LinearLayout? = null
-    private var overlayPkg: String? = null   // which app the wall is covering
-    private var timerDeadline: Long? = null  // what the session-timer notification counts down to
-    private var timerLevel = 0               // warning level (0/50/90) its text shows
-    private var shown: Pair<Int, Notification>? = null  // the one notification up right now
+    private var onScreen: Map<String, Storage.Bounds> = emptyMap()
+    private val sessions = mutableMapOf<String, Long>()   // limited app on screen -> when its session started
+    private val walls = mutableMapOf<String, Wall>()      // spent app on screen -> the wall over it
+    private val timers = mutableMapOf<String, Timer>()    // app -> the countdown notification up for it
+    private val timerIds = mutableMapOf<String, Int>()    // app -> its notification id, kept for the service's life
+    // Window id -> app, from the last read: a window's contents can be
+    // briefly unreadable mid-transition, and the wall mustn't drop for it.
+    private var windowApps = mapOf<Int, String>()
 
-    // No point polling a dark screen: nothing is being used. The screen-off
-    // "paused" event ends the session first, then polling stops.
+    private class Wall(val view: View, var bounds: Storage.Bounds, val homeButton: Boolean)
+    private data class Timer(val deadline: Long, val level: Int)
+
     private val screenReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            when (intent.action) {
-                Intent.ACTION_SCREEN_ON -> startPolling()
-                Intent.ACTION_SCREEN_OFF -> {
-                    poll.run()   // one last read picks up the pause event
-                    stopPolling()
-                }
-            }
-        }
+        override fun onReceive(context: Context, intent: Intent) = refresh()
     }
 
-    override fun onCreate() {
-        super.onCreate()
-        // Clear leftovers from before a restart or update (an old countdown,
-        // older versions' per-app warnings): only the notification posted
-        // below should be up.
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        instance = this
+        // Clear leftovers from older versions (the foreground service's
+        // notification, per-app warnings) and from before a restart.
         val nm = getSystemService(NotificationManager::class.java)
         nm.cancelAll()
-        // Warnings used to be their own notifications on these channels.
-        nm.deleteNotificationChannel("usage")
-        nm.deleteNotificationChannel("usage_hi")
+        for (old in listOf("service", "usage", "usage_hi")) nm.deleteNotificationChannel(old)
         registerReceiver(screenReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_USER_PRESENT)
         })
+        Log.i(TAG, "connected")
+        refresh()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Mid-session (e.g. a restart request) keep the countdown up.
-        val (id, notif) = shown ?: (NOTIF_SERVICE to onDutyNotification())
-        show(id, notif)
-        if (getSystemService(PowerManager::class.java).isInteractive) startPolling()
-        else Log.d(TAG, "screen off: not polling yet")
-        return START_STICKY
+    override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        // A burst of window events (an app opening fires several) is one refresh.
+        handler.removeCallbacks(refreshNow)
+        handler.postDelayed(refreshNow, 50)
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    override fun onInterrupt() {}
 
-    private fun onDutyNotification(): Notification {
-        // MIN importance: no sound, no status-bar icon, just a collapsed line
-        // at the bottom of the shade (Android 13+ lets the user swipe it away).
-        getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(CHANNEL_SERVICE, "Blocker running", NotificationManager.IMPORTANCE_MIN))
-        return Notification.Builder(this, CHANNEL_SERVICE)
-            .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("AppBlock is on duty")
-            .setContentText("Watching for apps over their allowance.")
-            .setContentIntent(openApp())
-            .setOngoing(true)
-            .build()
+    private val refreshNow = Runnable { refresh() }
+
+    /** Re-read what's on screen and act on it. */
+    private fun refresh() {
+        handler.removeCallbacks(refreshNow)
+        // Screen off or locked: nothing's being used, and a wall must never
+        // cover the lock screen.
+        val usable = getSystemService(PowerManager::class.java).isInteractive &&
+            !getSystemService(KeyguardManager::class.java).isKeyguardLocked
+        val windows = if (usable) readWindows() else emptyList()
+        val height = screenHeight()
+        val apps = Storage.onScreenAfter(windows, packageName, height, onScreen)
+        if (apps.keys != onScreen.keys) Log.d(TAG, "on screen: ${apps.keys}")
+        onScreen = apps
+        enforce(windows, height)
     }
 
-    private fun openApp() = PendingIntent.getActivity(this, 0,
-        Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-
-    /**
-     * Make `notif` the service's one notification. Re-calling startForeground
-     * with a different id swaps it in and takes the previous one down; the
-     * explicit cancel covers the old one in case the system leaves it behind.
-     * Posting also brings it back if the user had swiped it away.
-     */
-    private fun show(id: Int, notif: Notification) {
-        val previous = shown?.first
-        try {
-            if (Build.VERSION.SDK_INT >= 34) {
-                startForeground(id, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-            } else {
-                startForeground(id, notif)
+    private fun readWindows(): List<Storage.ScreenWindow> {
+        val list = try { windows } catch (e: Exception) { emptyList<AccessibilityWindowInfo>() }
+        val apps = mutableMapOf<Int, String>()
+        val out = list.map { w ->
+            val r = Rect().also { w.getBoundsInScreen(it) }
+            val kind = when (w.type) {
+                AccessibilityWindowInfo.TYPE_APPLICATION -> Storage.WindowKind.APP
+                AccessibilityWindowInfo.TYPE_SYSTEM -> Storage.WindowKind.SYSTEM
+                else -> Storage.WindowKind.OTHER
             }
-        } catch (e: Exception) {  // refused: keep whatever is up rather than crash
-            Log.w(TAG, "notification $id refused", e)
-            return
+            val pkg = if (kind != Storage.WindowKind.APP) null
+                else (try { w.root?.packageName?.toString() } catch (e: Exception) { null }) ?: windowApps[w.id]
+            if (pkg != null) apps[w.id] = pkg
+            Storage.ScreenWindow(kind, Storage.Bounds(r.left, r.top, r.right, r.bottom), pkg)
         }
-        shown = id to notif
-        if (previous != null && previous != id) {
-            getSystemService(NotificationManager::class.java).cancel(previous)
-        }
-    }
-
-    private fun startPolling() {
-        if (polling) return
-        polling = true
-        Log.d(TAG, "polling started")
-        handler.post(poll)
-    }
-
-    private fun stopPolling() {
-        polling = false
-        Log.d(TAG, "polling stopped")
-        handler.removeCallbacks(poll)
-        endSession()
-        foreground = null
-    }
-
-    /** Read the usage events since the last poll and react to the app in front. */
-    private val poll = object : Runnable {
-        override fun run() {
-            val now = System.currentTimeMillis()
-            // Usage access revoked while running: the query throws, and with
-            // nothing to see there's nothing to enforce. Keep polling, so
-            // blocking picks up again by itself once access is back.
-            val events = try { readEvents(now - lookbackMs, now) } catch (e: SecurityException) { null }
-            val front = if (events == null) null else Storage.foregroundFrom(events, foreground)
-            if (front != foreground) Log.d(TAG, "foreground: $front")
-            foreground = front
-            lookbackMs = 2 * pollMs
-            onForeground(foreground)
-            if (polling) handler.postDelayed(this, pollMs)
-        }
-    }
-
-    private fun readEvents(from: Long, to: Long): List<Storage.UsageEvent> {
-        val usm = getSystemService(UsageStatsManager::class.java)
-        val events = usm.queryEvents(from, to)
-        val out = mutableListOf<Storage.UsageEvent>()
-        val e = UsageEvents.Event()
-        while (events.hasNextEvent()) {
-            events.getNextEvent(e)
-            when (e.eventType) {
-                UsageEvents.Event.ACTIVITY_RESUMED ->
-                    out += Storage.UsageEvent(resumed = true, pkg = e.packageName)
-                UsageEvents.Event.ACTIVITY_PAUSED ->
-                    out += Storage.UsageEvent(resumed = false, pkg = e.packageName)
-            }
-        }
+        windowApps = apps
         return out
     }
 
-    private val tick = object : Runnable {
-        override fun run() {
-            val pkg = currentPkg ?: return
-            val rule = Storage.loadRules(this@BlockerService)[pkg] ?: return
-            // Flush the session so far into the usage log, then re-check the budget.
-            val now = System.currentTimeMillis()
-            Storage.addUsage(this@BlockerService, pkg, sessionStart, now, rule.windowMin)
-            sessionStart = now
-            if (Storage.usedMsInWindow(this@BlockerService, pkg, rule.windowMin) >= rule.allowMin * 60_000L) {
-                currentPkg = null
-                hideTimer()
-                block(pkg, rule)
-            } else {
-                showTimer(pkg, rule)
-                handler.postDelayed(this, tickMs)
+    private fun spent(pkg: String, rule: Rule) =
+        Storage.usedMsInWindow(this, pkg, rule.windowMin) >= rule.allowMin * 60_000L
+
+    /** Walls over the spent apps on screen, sessions and countdowns for the other limited ones. */
+    private fun enforce(windows: List<Storage.ScreenWindow>, height: Int) {
+        val rules = Storage.loadRules(this)
+        val plan = Storage.plan(onScreen.keys, rules, ::spent)
+        val now = System.currentTimeMillis()
+
+        for (pkg in sessions.keys - plan.timed) endSession(pkg, rules[pkg])
+        for (pkg in plan.timed) sessions.getOrPut(pkg) { now }
+
+        // The shade or power menu is open: the walls would be over it.
+        val stepAside = Storage.systemOnTop(windows, height)
+        // Home already showing beside the app (it's in a pop-up over it): a
+        // "Go to home screen" button would do nothing.
+        val homeButton = homePackage() !in onScreen
+        for (pkg in walls.keys.toList()) if (stepAside || pkg !in plan.walled) hideWall(pkg)
+        if (!stepAside) for (pkg in plan.walled) {
+            showWall(pkg, rules.getValue(pkg),
+                Storage.wallBounds(onScreen.getValue(pkg), windows, height), homeButton)
+        }
+
+        showTimers(plan.timed, rules)
+        handler.removeCallbacks(tick)
+        // Walled apps are re-checked too: the wall lifts once time comes back.
+        if (plan.timed.isNotEmpty() || plan.walled.isNotEmpty()) handler.postDelayed(tick, tickMs)
+    }
+
+    /** Every few seconds while a limited app is on screen: log the time so far, then re-check. */
+    private val tick = Runnable {
+        val rules = Storage.loadRules(this)
+        val now = System.currentTimeMillis()
+        for (session in sessions.entries) {
+            rules[session.key]?.let { Storage.addUsage(this, session.key, session.value, now, it.windowMin) }
+            session.setValue(now)
+        }
+        refresh()
+    }
+
+    /** `pkg` left the screen (or ran out): log its session. */
+    private fun endSession(pkg: String, rule: Rule?) {
+        val start = sessions.remove(pkg) ?: return
+        if (rule != null) Storage.addUsage(this, pkg, start, System.currentTimeMillis(), rule.windowMin)
+    }
+
+    /** The launcher's package (the user can change launchers, so asked each time). */
+    private fun homePackage(): String? = packageManager.resolveActivity(
+        Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)?.activityInfo?.packageName
+
+    private fun screenHeight(): Int {
+        val wm = getSystemService(WindowManager::class.java)
+        if (Build.VERSION.SDK_INT >= 30) return wm.maximumWindowMetrics.bounds.height()
+        @Suppress("DEPRECATION")
+        return DisplayMetrics().also { wm.defaultDisplay.getRealMetrics(it) }.heightPixels
+    }
+
+    // ------------------------------------------------------------- countdowns
+
+    /**
+     * One status-bar countdown per limited app on screen, of what's left of
+     * its allowance, like the Clock app's timer. The system ticks the
+     * chronometer itself, so each is only (re)posted when something actually
+     * changes: at session start, whenever old usage ages out of the rolling
+     * window and gives time back, and when usage crosses 50%/90% (the
+     * warning then replaces the text). Tapping one opens AppBlock.
+     */
+    private fun showTimers(apps: Set<String>, rules: Map<String, Rule>) {
+        val nm = getSystemService(NotificationManager::class.java)
+        for (pkg in timers.keys - apps) {
+            timers.remove(pkg)
+            nm.cancel(timerIds.getValue(pkg))
+        }
+        if (apps.isEmpty()) return
+        // LOW: icon in the status bar, no sound or heads-up.
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_TIMER, "Session timer", NotificationManager.IMPORTANCE_LOW))
+        for (pkg in apps) {
+            val rule = rules.getValue(pkg)
+            val usedMs = Storage.usedMsInWindow(this, pkg, rule.windowMin)
+            val deadline = System.currentTimeMillis() + Storage.remainingMs(usedMs, rule.allowMin)
+            val level = Storage.crossedWarnLevel(usedMs, rule.allowMin)
+            val shown = timers[pkg]
+            if (!Storage.timerNeedsRepost(shown?.deadline, deadline, shown?.level ?: 0, level)) continue
+            timers[pkg] = Timer(deadline, level)
+            val id = timerIds.getOrPut(pkg) { NOTIF_TIMER + timerIds.size }
+            try {
+                nm.notify(id, timerNotification(pkg, rule, usedMs, deadline, level))
+            } catch (e: Exception) {  // refused: no countdown, blocking goes on
+                Log.w(TAG, "countdown for $pkg refused", e)
             }
         }
     }
 
-    /** `pkg` is the app in front right now (null: nothing, e.g. screen off). */
-    private fun onForeground(pkg: String?) {
-        // Foreground moved off the walled app -> take the wall down.
-        if (overlay != null && pkg != overlayPkg) hideOverlay()
-
-        if (pkg == currentPkg) return
-        endSession()
-
-        val rule = Storage.loadRules(this)[pkg ?: return] ?: return
-        if (Storage.usedMsInWindow(this, pkg, rule.windowMin) >= rule.allowMin * 60_000L) {
-            block(pkg, rule)
-        } else {
-            // Budget freed up while the wall stayed on screen (e.g. across a
-            // screen-off): let them in.
-            hideOverlay()
-            currentPkg = pkg
-            sessionStart = System.currentTimeMillis()
-            showTimer(pkg, rule)
-            handler.postDelayed(tick, tickMs)
-        }
-    }
-
     /**
-     * The status-bar countdown of what's left of this app's allowance, like
-     * the Clock app's timer, shown in place of the "on duty" notification.
-     * The system ticks the chronometer itself, so this is only (re)posted
-     * when something actually changes: at session start, whenever old usage
-     * ages out of the rolling window and gives time back, and when usage
-     * crosses 50%/90% (the warning then replaces the text). Tapping it opens
-     * AppBlock, which also stops the clock, since the tracked app leaves the
-     * foreground.
-     *
-     * On Android 16 QPR1+ it asks to be a "Live Update": the system then
-     * shows it as a status-bar chip with the countdown ticking in it, and OEM
-     * skins put it in their capsule (OxygenOS "Live Alerts"). Older versions
-     * ignore the request and just show the notification. Requirements met
-     * here: ongoing, has a title, plain style, channel above MIN importance,
-     * and no short-text override so the chip shows the chronometer.
+     * On Android 16 QPR1+ a countdown asks to be a "Live Update": the system
+     * then shows it as a status-bar chip with the countdown ticking in it,
+     * and OEM skins put it in their capsule (OxygenOS "Live Alerts"). Older
+     * versions ignore the request and just show the notification.
+     * Requirements met here: ongoing, has a title, plain style, channel above
+     * MIN importance, and no short-text override so the chip shows the
+     * chronometer.
      */
-    private fun showTimer(pkg: String, rule: Rule) {
-        val usedMs = Storage.usedMsInWindow(this, pkg, rule.windowMin)
-        val deadline = System.currentTimeMillis() + Storage.remainingMs(usedMs, rule.allowMin)
-        val level = Storage.crossedWarnLevel(usedMs, rule.allowMin)
-        if (!Storage.timerNeedsRepost(timerDeadline, deadline, timerLevel, level)) return
-        timerDeadline = deadline
-        timerLevel = level
-        // LOW: icon in the status bar, no sound or heads-up.
-        getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(CHANNEL_TIMER, "Session timer", NotificationManager.IMPORTANCE_LOW))
+    private fun timerNotification(pkg: String, rule: Rule, usedMs: Long, deadline: Long, level: Int): Notification {
         val text = if (level == 0) "Allowance for the next ${Storage.fmtSpan(rule.windowMin)} window."
             else "You've used ${Storage.usedPct(usedMs, rule.allowMin)}% " +
                 "(${Storage.fmtMin(usedMs)} min) of your usage for ${labelFor(pkg)}"
-        show(NOTIF_TIMER, Notification.Builder(this, CHANNEL_TIMER)
+        return Notification.Builder(this, CHANNEL_TIMER)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle("${labelFor(pkg)}: time left")
             .setContentText(text)
@@ -281,19 +249,12 @@ class BlockerService : Service() {
             .setChronometerCountDown(true)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setContentIntent(openApp())
+            .setContentIntent(PendingIntent.getActivity(this, 0,
+                Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
             // Notification.Builder.setRequestPromotedOngoing(true), spelled
             // as the extra it sets so we needn't compile against SDK 36.1.
             .addExtras(Bundle().apply { putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true) })
-            .build())
-    }
-
-    /** Session over: back to the plain "on duty" notification. */
-    private fun hideTimer() {
-        if (timerDeadline == null) return
-        timerDeadline = null
-        timerLevel = 0
-        show(NOTIF_SERVICE, onDutyNotification())
+            .build()
     }
 
     private fun iconFor(pkg: String): android.graphics.drawable.Drawable = try {
@@ -304,47 +265,65 @@ class BlockerService : Service() {
         packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
     } catch (e: Exception) { pkg }
 
-    /** Foreground moved elsewhere: log the finished session, stop ticking. */
-    private fun endSession() {
-        handler.removeCallbacks(tick)
-        hideTimer()
-        val pkg = currentPkg ?: return
-        currentPkg = null
-        val rule = Storage.loadRules(this)[pkg] ?: return
-        Storage.addUsage(this, pkg, sessionStart, System.currentTimeMillis(), rule.windowMin)
+    // ------------------------------------------------------------------ walls
+
+    private fun wallParams(b: Storage.Bounds) = WindowManager.LayoutParams(
+        b.right - b.left, b.bottom - b.top,
+        WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+        PixelFormat.OPAQUE
+    ).apply {
+        gravity = Gravity.TOP or Gravity.START
+        x = b.left
+        y = b.top
+        if (Build.VERSION.SDK_INT >= 28) {
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
     }
 
-    /**
-     * Send the user to the launcher. Launching from a service is normally
-     * refused on Android 10+, but an app holding "Display over other apps"
-     * with a visible overlay is exempt.
-     */
-    private fun goHome() {
+    /** Cover `pkg`'s window with the block wall, or move its wall to where the window now is. */
+    private fun showWall(pkg: String, rule: Rule, bounds: Storage.Bounds, homeButton: Boolean) {
+        val wm = getSystemService(WindowManager::class.java)
+        walls[pkg]?.let { wall ->
+            // Crossing into the other layout (split <-> full screen) rebuilds it.
+            if (wall.homeButton == homeButton && compact(wall.bounds) == compact(bounds)) {
+                if (wall.bounds == bounds) return
+                wall.bounds = bounds
+                try { wm.updateViewLayout(wall.view, wallParams(bounds)) } catch (e: Exception) {}
+                return
+            }
+            hideWall(pkg)
+        }
+        Log.i(TAG, "blocking $pkg at $bounds")
+        val view = wallView(pkg, rule, compact(bounds), homeButton)
         try {
-            startActivity(Intent(Intent.ACTION_MAIN)
-                .addCategory(Intent.CATEGORY_HOME)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        } catch (e: Exception) {}
-    }
-
-    /** Cover the screen with the block wall. */
-    private fun block(pkg: String, rule: Rule) {
-        if (overlay != null) return
-        // Permission revoked since setup: addView would throw. The home
-        // screen shows the missing requirement; nothing to do here.
-        if (!Settings.canDrawOverlays(this)) {
-            Log.w(TAG, "can't block $pkg: no display-over-apps permission")
+            wm.addView(view, wallParams(bounds))
+        } catch (e: Exception) {
+            Log.w(TAG, "couldn't draw the wall over $pkg", e)
             return
         }
-        Log.i(TAG, "blocking $pkg")
+        walls[pkg] = Wall(view, bounds, homeButton)
+    }
+
+    private fun hideWall(pkg: String) {
+        val wall = walls.remove(pkg) ?: return
+        try { getSystemService(WindowManager::class.java).removeView(wall.view) } catch (e: Exception) {}
+    }
+
+    /** A window too short for the full wall (a split-screen half, a pop-up) gets the compact one. */
+    private fun compact(b: Storage.Bounds) = b.height < Ui.dp(this, 560)
+
+    private fun wallView(pkg: String, rule: Rule, compact: Boolean, homeButton: Boolean): View {
         val waitMin = Storage.ceilMin(Storage.msUntilUnblocked(this, pkg, rule))
         val label = labelFor(pkg)
 
-        val wall = LinearLayout(this).apply {
+        return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             clipChildren = false
-            val side = Ui.dp(this@BlockerService, 28)
+            val side = Ui.dp(this@BlockerService, if (compact) 16 else 28)
             setPadding(side, side, side, side)
             setBackgroundColor(getColor(R.color.canvas))
 
@@ -353,14 +332,14 @@ class BlockerService : Service() {
             val headline = "$label is blocked."
             val wait = "Try again in ${Storage.fmtSpan(waitMin.toInt())}."
             val message = SpannableString("$headline\n\n$wait").apply {
-                setSpan(AbsoluteSizeSpan(40, true), 0, headline.length + 1, 0)
+                setSpan(AbsoluteSizeSpan(if (compact) 28 else 40, true), 0, headline.length + 1, 0)
                 setSpan(Ui.FontSpan(Ui.serif(this@BlockerService)), 0, headline.length, 0)
                 setSpan(AbsoluteSizeSpan(10, true), headline.length + 1, headline.length + 2, 0)  // the blank line: a small gap
-                setSpan(AbsoluteSizeSpan(18, true), headline.length + 2, length, 0)
+                setSpan(AbsoluteSizeSpan(if (compact) 15 else 18, true), headline.length + 2, length, 0)
                 setSpan(ForegroundColorSpan(getColor(R.color.muted)), headline.length + 2, length, 0)
             }
 
-            val icon = FrameLayout(context).apply {
+            if (!compact) addView(FrameLayout(context).apply {
                 clipChildren = false   // the lock badge overhangs the icon's corner
                 addView(Ui.appIcon(context, iconFor(pkg), 84).apply {
                     layoutParams = FrameLayout.LayoutParams(Ui.dp(context, 84), Ui.dp(context, 84))
@@ -378,8 +357,9 @@ class BlockerService : Service() {
                     Gravity.BOTTOM or Gravity.END).apply {
                     marginEnd = -Ui.dp(context, 6); bottomMargin = -Ui.dp(context, 6)
                 })
-            }
-            addView(icon, LinearLayout.LayoutParams(Ui.dp(context, 84), Ui.dp(context, 84)))
+            }, LinearLayout.LayoutParams(Ui.dp(context, 84), Ui.dp(context, 84)).apply {
+                bottomMargin = Ui.dp(context, 32)
+            })
             addView(TextView(context).apply {
                 text = message
                 textSize = 30f
@@ -388,73 +368,57 @@ class BlockerService : Service() {
                 typeface = Ui.sans(context)
                 setLineSpacing(0f, 1.05f)
                 letterSpacing = -0.01f
-            }, LinearLayout.LayoutParams(Ui.MATCH, Ui.WRAP).apply { topMargin = Ui.dp(context, 32) })
-            addView(Ui.muted(context, "The minutes come back as older use leaves the window.", 14f).apply {
+            }, LinearLayout.LayoutParams(Ui.MATCH, Ui.WRAP))
+            if (!compact) addView(Ui.muted(context, "The minutes come back as older use leaves the window.", 14f).apply {
                 gravity = Gravity.CENTER
             }, LinearLayout.LayoutParams(Ui.MATCH, Ui.WRAP).apply { topMargin = Ui.dp(context, 16) })
-            addView(Ui.primaryButton(context, "Go to home screen", R.drawable.ic_chevron) {
-                goHome()
-                hideOverlay()
-            }, LinearLayout.LayoutParams(Ui.WRAP, Ui.WRAP).apply { topMargin = Ui.dp(context, 36) })
+            // On every wall that could cover the gesture bar, so there's always a way out.
+            if (homeButton) addView(Ui.primaryButton(context, "Go to home screen", R.drawable.ic_chevron) {
+                performGlobalAction(GLOBAL_ACTION_HOME)
+            }, LinearLayout.LayoutParams(Ui.WRAP, Ui.WRAP).apply {
+                topMargin = Ui.dp(context, if (compact) 16 else 36)
+            })
 
             // Settle in: no fade of the wall itself (it must cover instantly).
-            Ui.enter(icon, 0)
-            for (i in 1 until childCount) Ui.enter(getChildAt(i), i)
+            for (i in 0 until childCount) Ui.enter(getChildAt(i), i)
         }
-
-        val lp = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            PixelFormat.OPAQUE)
-        try {
-            (getSystemService(WINDOW_SERVICE) as WindowManager).addView(wall, lp)
-        } catch (e: Exception) {
-            Log.w(TAG, "couldn't draw the wall over $pkg", e)
-            return
-        }
-        overlay = wall
-        overlayPkg = pkg
     }
 
-    private fun hideOverlay() {
-        overlay?.let { (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(it) }
-        overlay = null
-        overlayPkg = null
+    // ------------------------------------------------------------------- end
+
+    /** Switched off (or the app updated): log open sessions, take everything down. */
+    private fun shutDown() {
+        if (instance !== this) return
+        instance = null
+        handler.removeCallbacksAndMessages(null)
+        val rules = Storage.loadRules(this)
+        for (pkg in sessions.keys.toList()) endSession(pkg, rules[pkg])
+        showTimers(emptySet(), rules)
+        for (pkg in walls.keys.toList()) hideWall(pkg)
+        onScreen = emptyMap()
+        try { unregisterReceiver(screenReceiver) } catch (e: Exception) {}
+        Log.i(TAG, "disconnected")
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        shutDown()
+        return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
-        timerDeadline = null  // going away: don't swap notifications back in on the way out
-        hideOverlay()
-        stopPolling()
-        try { unregisterReceiver(screenReceiver) } catch (e: Exception) {}
+        shutDown()
         super.onDestroy()
     }
 
     companion object {
         private const val TAG = "BlockerService"
-        private const val CHANNEL_SERVICE = "service"
         private const val CHANNEL_TIMER = "timer"
-        private const val NOTIF_SERVICE = 1
         private const val NOTIF_TIMER = 2
         // Notification.EXTRA_REQUEST_PROMOTED_ONGOING (API 36.1)
         private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
 
-        /**
-         * (Re)start the blocker. Safe to call repeatedly — a running service
-         * just re-posts its notification. Only worth it once every required
-         * setting is on; before that it couldn't see or draw anything.
-         */
-        fun start(ctx: Context) {
-            if (!allRequirementsMet(ctx)) return
-            try {
-                ctx.startForegroundService(Intent(ctx, BlockerService::class.java))
-            } catch (e: Exception) {
-                // Background start refused (shouldn't happen from an activity,
-                // boot, or package-replaced): the next app open retries.
-            }
-        }
+        /** The running service, while it's switched on (the e2e tests wait on it). */
+        @Volatile var instance: BlockerService? = null
+            private set
     }
 }

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What the blocker asks of the accessibility framework: window changes
+     only (no clicks, no typing, no content changes), and the window list
+     with each window's app, which needs "retrieve window content". It reads
+     the app's package from each window and nothing else. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowsChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows"
+    android:canRetrieveWindowContent="true"
+    android:notificationTimeout="100"
+    android:isAccessibilityTool="false"
+    android:description="@string/blocker_service_description"
+    android:settingsActivity="xyz.robinroy.appblock.MainActivity" />

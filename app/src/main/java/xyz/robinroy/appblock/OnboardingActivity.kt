@@ -254,8 +254,8 @@ class OnboardingActivity : Activity() {
         intros[2] = { Ui.pop(hero.getChildAt(0)) }
         return page(
             hero, "The wall", "A calm stop, not a nag.",
-            "When the time is gone, a full-screen wall covers the app and points " +
-                "you home. With notifications on, you get a gentle note at halfway " +
+            "When the time is gone, a wall covers the app, even in split screen " +
+                "or a pop-up window, and points you home. With notifications on, you get a gentle note at halfway " +
                 "and again near the end."
         )
     }
@@ -277,10 +277,10 @@ class OnboardingActivity : Activity() {
         intros[3] = { Ui.pop(hero.getChildAt(0)) }
         return page(
             hero, "The promise", "Private, and easy to leave.",
-            "Next you'll turn on three settings: Usage access to see which app is " +
-                "open, Display over other apps to draw the wall, and Unrestricted " +
-                "battery so Android doesn't stop the blocker. Notifications are " +
-                "optional, for the warnings."
+            "Next you'll turn on two settings: AppBlock in Accessibility, to see " +
+                "which apps are on screen and draw the wall, and Unrestricted battery " +
+                "so Android doesn't stop the blocker. Usage access (screen-time " +
+                "stats) and notifications (the countdowns) are optional."
         )
     }
 

@@ -120,7 +120,7 @@ class SystemUiE2eTest {
     private fun keyboardBounds(): Rect? {
         val deadline = System.currentTimeMillis() + WAIT
         while (System.currentTimeMillis() < deadline) {
-            InstrumentationRegistry.getInstrumentation().uiAutomation.windows
+            E2e.uiAutomation.windows
                 .firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
                 ?.let { w -> return Rect().also { w.getBoundsInScreen(it) } }
             device.waitForIdle()

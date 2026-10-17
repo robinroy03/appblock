@@ -16,6 +16,7 @@ import xyz.robinroy.appblock.E2e.openApp
 import xyz.robinroy.appblock.E2e.openHome
 import xyz.robinroy.appblock.E2e.pressOk
 import xyz.robinroy.appblock.E2e.seedUsage
+import xyz.robinroy.appblock.E2e.setBlocker
 import xyz.robinroy.appblock.E2e.shell
 import xyz.robinroy.appblock.E2e.text
 import xyz.robinroy.appblock.E2e.textContains
@@ -38,8 +39,8 @@ class HomeE2eTest {
     @get:Rule(order = 0)
     val leave = E2e.Cleanup {
         device.findObject(text("Go to home screen"))?.click()
-        // A test failing mid-way must not leave usage access off for the next one.
-        shell("appops set ${ctx.packageName} GET_USAGE_STATS allow")
+        // A test failing mid-way must not leave the blocker off for the next one.
+        setBlocker(true)
         device.pressHome()
     }
 
@@ -172,18 +173,45 @@ class HomeE2eTest {
     }
 
     @Test
-    fun losingUsageAccess_pausesBlocking_andKeepsTheRules() {
+    fun losingAccessibility_pausesBlocking_andKeepsTheRules() {
         freshState(mapOf(CLOCK to Rule(allowMin = 5, windowMin = 120)))
-        shell("appops set ${ctx.packageName} GET_USAGE_STATS deny")
+        setBlocker(false)
         openHome()
 
         waitFor(textContains("Blocking is paused"))
         assertFalse(appears(By.desc("Set limit for Clock"), timeout = 1_000))
 
-        shell("appops set ${ctx.packageName} GET_USAGE_STATS allow")
+        setBlocker(true)
         openHome()
 
         waitFor(text("5 min in any 2 hrs · 0 min used"))
         assertEquals(Rule(5, 120), Storage.loadRules(ctx)[CLOCK])
+    }
+
+    @Test
+    fun turningOnAccessibility_explainsWhatItSees_thenOpensItsSettings() {
+        freshState()
+        setBlocker(false)
+        openHome()
+
+        waitFor(text("Accessibility")).click()
+        waitFor(text("Turn on AppBlock in Accessibility"))
+        waitFor(textContains("never reads what's on screen"))
+        waitFor(text("Agree and continue")).click()
+
+        assertTrue("Accessibility settings didn't open",
+            appears(By.pkg("com.android.settings"), timeout = E2e.WAIT))
+    }
+
+    @Test
+    fun withoutUsageAccess_homeShowsTimeLeftInsteadOfScreenTime() {
+        freshState(mapOf(CLOCK to Rule(allowMin = 5, windowMin = 120)))
+        seedUsage(CLOCK, startAgo = 30.min, endAgo = 28.min, windowMin = 120)
+        shell("appops set ${ctx.packageName} GET_USAGE_STATS deny")   // freshState grants it back
+        openHome()
+
+        // Optional: blocking stays on, the row just can't show today's screen time.
+        waitFor(text("3 min left"))
+        assertFalse(appears(textContains("Blocking is paused"), timeout = 1_000))
     }
 }

@@ -88,8 +88,6 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        // Everything granted: make sure the blocker is up (no-op if it is).
-        BlockerService.start(this)
         render()
         refreshPermRows?.invoke()
     }
@@ -142,7 +140,7 @@ class MainActivity : Activity() {
                 }
                 put(sectionTitle("Blocked apps", entries.size.toString()), 36)
                 for (entry in entries) {
-                    put(appRow(entry.key, entry.value, today[entry.key] ?: 0L, now, animate))
+                    put(appRow(entry.key, entry.value, today?.let { it[entry.key] ?: 0L }, now, animate))
                 }
             }
         }
@@ -195,7 +193,7 @@ class MainActivity : Activity() {
 
     // ----------------------------------------------------------------- setup
 
-    /** The three required settings as a checklist: tap a row, fix it, come back to a tick. */
+    /** The required settings as a checklist: tap a row, fix it, come back to a tick. */
     private fun setupCard(): View {
         val reqs = Storage.Requirement.entries
         val done = reqs.count { requirementMet(this, it) }
@@ -204,7 +202,8 @@ class MainActivity : Activity() {
             val p = Ui.dp(context, 20)
             setPadding(p, p, p, Ui.dp(context, 10))
             addView(Ui.display(context, "Finish setup", 24f))
-            addView(Ui.muted(context, "$done of ${reqs.size} done. Blocking starts when all three are on.")
+            addView(Ui.muted(context, "$done of ${reqs.size} done. Blocking starts when " +
+                (if (reqs.size == 2) "both are on." else "all ${reqs.size} are on."))
                 .apply { setPadding(0, Ui.dp(context, 6), 0, 0) })
             // Segmented progress: one segment per requirement.
             addView(LinearLayout(context).apply {
@@ -237,12 +236,7 @@ class MainActivity : Activity() {
             background = Ui.shape(context, R.color.ink, 99f)
             setPadding(Ui.dp(context, 16), Ui.dp(context, 9), Ui.dp(context, 16), Ui.dp(context, 9))
         }
-        val icon = when (req) {
-            Storage.Requirement.USAGE_ACCESS -> R.drawable.ic_clock
-            Storage.Requirement.OVERLAY -> R.drawable.ic_layers
-            Storage.Requirement.BATTERY -> R.drawable.ic_battery
-        }
-        return Ui.row(this, icon, req.title, req.permsNote.removePrefix("Required. "), trailing) {
+        return Ui.row(this, requirementIcon(req), req.title, req.permsNote.removePrefix("Required. "), trailing) {
             requirementFix(req)
         }
     }
@@ -326,7 +320,7 @@ class MainActivity : Activity() {
      * until it's back, a slim bar, and the rule in words. The whole row
      * edits the limit.
      */
-    private fun appRow(pkg: String, rule: Rule, todayMs: Long, now: Long, animate: Boolean): View {
+    private fun appRow(pkg: String, rule: Rule, todayMs: Long?, now: Long, animate: Boolean): View {
         val usedMs = Storage.usedMs(Storage.loadIntervals(this, pkg), rule.windowMin, now)
         val usedMin = Storage.displayedUsedMin(usedMs, rule.allowMin)
         val allowMs = rule.allowMin * 60_000f
@@ -338,7 +332,9 @@ class MainActivity : Activity() {
             val waitMin = Storage.ceilMin(Storage.msUntilUnblocked(this, pkg, rule))
             Ui.txt(this, "Blocked, back in ${Storage.fmtSpan(waitMin.toInt())}", 13f, R.color.danger,
                 medium = true)
-        } else Ui.muted(this, Storage.fmtToday(todayMs), 13f)
+        } else if (todayMs != null) Ui.muted(this, Storage.fmtToday(todayMs), 13f)
+        else Ui.muted(this, Storage.fmtSpan(Storage.ceilMin(
+            Storage.remainingMs(usedMs, rule.allowMin)).toInt()) + " left", 13f)
 
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -487,17 +483,15 @@ class MainActivity : Activity() {
             val group = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 for (req in Storage.Requirement.entries) {
-                    addView(permission(
-                        when (req) {
-                            Storage.Requirement.USAGE_ACCESS -> R.drawable.ic_clock
-                            Storage.Requirement.OVERLAY -> R.drawable.ic_layers
-                            Storage.Requirement.BATTERY -> R.drawable.ic_battery
-                        },
-                        req.title, req.permsNote, { requirementMet(this@MainActivity, req) },
+                    addView(permission(requirementIcon(req), req.title, req.permsNote, { requirementMet(this@MainActivity, req) },
                         { requirementFix(req) }))
                 }
+                addView(permission(R.drawable.ic_clock, "Usage access",
+                    "Optional. Shows your screen time on the home list and in the picker.",
+                    { usageAccessGranted(this@MainActivity) },
+                    { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }))
                 addView(permission(R.drawable.ic_bell, "Notifications",
-                    "Optional. Warns you at 50% and 90% of an app's allowance.",
+                    "Optional. Counts down your time and warns you at 50% and 90%.",
                     ::notificationsEnabled, ::openNotificationSettings))
             }
             addView(group, Ui.lp().apply { topMargin = Ui.dp(context, 6) })
@@ -530,10 +524,8 @@ class MainActivity : Activity() {
     // follows for free.
     private fun requirementFix(req: Storage.Requirement) {
         when (req) {
-            Storage.Requirement.USAGE_ACCESS ->
-                startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-            Storage.Requirement.OVERLAY ->
-                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, packageUri(this)))
+            Storage.Requirement.ACCESSIBILITY ->
+                if (accessibilityOn(this)) openAccessibilitySettings() else accessibilityDisclosure()
             // The direct "allow?" dialog can only grant. Once granted, tapping
             // the row goes to the battery-optimization list instead, where the
             // exemption can be reviewed and undone (find AppBlock there).
@@ -542,6 +534,36 @@ class MainActivity : Activity() {
                     startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                 else requestBatteryExemption()
         }
+    }
+
+    private fun requirementIcon(req: Storage.Requirement) = when (req) {
+        Storage.Requirement.ACCESSIBILITY -> R.drawable.ic_layers
+        Storage.Requirement.BATTERY -> R.drawable.ic_battery
+    }
+
+    /**
+     * What the accessibility service sees and why, before the user is sent
+     * to switch it on. Play requires this disclosure and an explicit yes
+     * ahead of the system's own (scarier) "full control" dialog.
+     */
+    private fun accessibilityDisclosure() {
+        Sheet.confirm(this, "Turn on AppBlock in Accessibility",
+            "AppBlock uses Android's accessibility service to see which apps are on " +
+                "screen, split screen and pop-up windows included, and to put the " +
+                "block wall over an app whose time is up.\n\n" +
+                "It only looks at which app each window belongs to. It never reads " +
+                "what's on screen or what you type, and nothing leaves your phone.\n\n" +
+                "On the next screen, find AppBlock (under Installed apps or Downloaded " +
+                "apps) and turn it on. Android will warn that it can see and control " +
+                "the screen: that's what every accessibility service is allowed, not " +
+                "what AppBlock does.\n\n" +
+                "Is the switch greyed out? Open AppBlock's App info, tap ⋮ at the top, " +
+                "choose \"Allow restricted settings\", then try again.",
+            yes = "Agree and continue", no = "Not now", onYes = ::openAccessibilitySettings)
+    }
+
+    private fun openAccessibilitySettings() {
+        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
     }
 
     /** System dialog asking to exempt AppBlock from battery optimization. */
@@ -734,8 +756,9 @@ class MainActivity : Activity() {
         }
     }
 
-    /** Screen time per package since midnight (needs Usage access, which the cards do too). */
-    private fun todayUsageMs(): Map<String, Long> {
+    /** Screen time per package since midnight; null without (the optional) Usage access. */
+    private fun todayUsageMs(): Map<String, Long>? {
+        if (!usageAccessGranted(this)) return null
         val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val midnight = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)

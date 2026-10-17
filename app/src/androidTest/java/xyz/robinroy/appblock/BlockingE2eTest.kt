@@ -7,13 +7,19 @@ import xyz.robinroy.appblock.E2e.PHONE
 import xyz.robinroy.appblock.E2e.CLOCK
 import xyz.robinroy.appblock.E2e.appears
 import xyz.robinroy.appblock.E2e.device
+import xyz.robinroy.appblock.E2e.ctx
 import xyz.robinroy.appblock.E2e.freshState
+import xyz.robinroy.appblock.E2e.homeScreenPackage
 import xyz.robinroy.appblock.E2e.min
 import xyz.robinroy.appblock.E2e.openApp
+import xyz.robinroy.appblock.E2e.openAsPopUp
 import xyz.robinroy.appblock.E2e.seedUsage
+import xyz.robinroy.appblock.E2e.shell
+import xyz.robinroy.appblock.E2e.splitScreenWith
 import xyz.robinroy.appblock.E2e.text
 import xyz.robinroy.appblock.E2e.textContains
 import xyz.robinroy.appblock.E2e.waitFor
+import xyz.robinroy.appblock.E2e.windowBounds
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -22,9 +28,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The core promise, end to end: the blocker service watching the real
- * foreground app and drawing the block wall over it. Budgets are seeded
- * into the usage log so no test waits out real minutes.
+ * The core promise, end to end: the blocker service watching the real apps
+ * on screen and drawing the block wall over a spent one, full screen, in
+ * split screen and in a pop-up window. Budgets are seeded into the usage
+ * log so no test waits out real minutes.
  */
 @RunWith(AndroidJUnit4::class)
 class BlockingE2eTest {
@@ -33,6 +40,7 @@ class BlockingE2eTest {
     @get:Rule(order = 0)
     val leave = E2e.Cleanup {
         device.findObject(text("Go to home screen"))?.click()
+        shell("settings put global enable_freeform_support 0")
         device.pressHome()
     }
 
@@ -89,6 +97,76 @@ class BlockingE2eTest {
 
         assertFalse(appears(textContains("is blocked"), timeout = 8_000))
         assertEquals(PHONE, device.currentPackageName)
+    }
+
+    @Test
+    fun withoutUsageAccess_blockingStillWorks() {
+        freshState(mapOf(CLOCK to Rule(allowMin = 1, windowMin = 120)))
+        seedUsage(CLOCK, startAgo = 11.min, endAgo = 10.min, windowMin = 120)
+        shell("appops set ${ctx.packageName} GET_USAGE_STATS deny")   // freshState grants it back
+
+        openApp(CLOCK)
+
+        waitFor(wall)
+    }
+
+    @Test
+    fun spentAppInSplitScreen_wallCoversItsHalf_andTheOtherHalfStaysUsable() {
+        freshState(mapOf(CLOCK to Rule(allowMin = 1, windowMin = 120)))
+        seedUsage(CLOCK, startAgo = 11.min, endAgo = 10.min, windowMin = 120)
+        openApp(PHONE)
+        openApp(CLOCK)
+        waitFor(wall)
+
+        splitScreenWith(PHONE)   // Clock on top, Phone below
+
+        assertTrue("the wall didn't shrink to Clock's half", E2e.eventually {
+            device.findObject(wall)?.let { windowBounds(it).bottom < device.displayHeight * 0.6 } ?: false
+        })
+        assertTrue("the wall came down over Clock in split screen", appears(wall, timeout = 3_000))
+        assertTrue("Phone's half is covered", appears(By.pkg(PHONE)))
+    }
+
+    @Test
+    fun budgetRunningOutInSplitScreen_blocksWhileTheOtherHalfIsUsed() {
+        freshState(mapOf(CLOCK to Rule(allowMin = 1, windowMin = 120)))
+        seedUsage(CLOCK, startAgo = 6.min, endAgo = 6.min - 50_000, windowMin = 120)   // 50 s used
+        openApp(PHONE)
+        openApp(CLOCK)
+        splitScreenWith(PHONE)
+
+        // Clock's half keeps using up its time though Phone is the app in use.
+        assertTrue("never blocked once the budget ran out", appears(wall, timeout = 30_000))
+    }
+
+    @Test
+    fun twoLimitedAppsInSplitScreen_eachShowsItsTimer() {
+        freshState(mapOf(
+            CLOCK to Rule(allowMin = 5, windowMin = 120),
+            PHONE to Rule(allowMin = 5, windowMin = 120)))
+        openApp(PHONE)
+        openApp(CLOCK)
+        splitScreenWith(PHONE)
+        device.openNotification()
+
+        waitFor(text("Clock: time left"))
+        waitFor(text("Phone: time left"))
+        device.pressBack()
+    }
+
+    @Test
+    fun spentAppInAPopUp_wallCoversJustThePopUp_andHomeStaysUsable() {
+        freshState(mapOf(CLOCK to Rule(allowMin = 1, windowMin = 120)))
+        seedUsage(CLOCK, startAgo = 11.min, endAgo = 10.min, windowMin = 120)
+
+        openAsPopUp(CLOCK)
+
+        val wallBounds = windowBounds(waitFor(wall))
+        assertTrue("the wall ($wallBounds) covers more than the pop-up",
+            wallBounds.width() < device.displayWidth && wallBounds.height() < device.displayHeight / 2 + 600)
+        // Home is right there beside it, so there's no button to go there.
+        assertFalse(appears(text("Go to home screen"), timeout = 1_000))
+        assertTrue("the home screen is covered", appears(By.pkg(homeScreenPackage())))
     }
 
     @Test

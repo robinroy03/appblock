@@ -8,10 +8,16 @@ import android.os.Process
 import android.provider.Settings
 
 // Live state of each Storage.Requirement, shared by the home screen (buttons,
-// paused note), the About dialog, and the service starters (boot, app open).
+// paused note) and the About dialog, plus the optional Usage access.
+
+/** True when AppBlock's accessibility service is switched on in Settings > Accessibility. */
+fun accessibilityOn(ctx: Context): Boolean = Storage.serviceEnabled(
+    Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES),
+    ctx.packageName, BlockerService::class.java.name)
 
 /** True when the user has granted "Usage access" (a special app op with its own
- *  Settings page — there is no runtime prompt for it). */
+ *  Settings page — there is no runtime prompt for it). Optional: it only
+ *  feeds the screen-time numbers on the home list and in the picker. */
 fun usageAccessGranted(ctx: Context): Boolean {
     @Suppress("DEPRECATION")
     return ctx.getSystemService(AppOpsManager::class.java).checkOpNoThrow(
@@ -19,15 +25,12 @@ fun usageAccessGranted(ctx: Context): Boolean {
     ) == AppOpsManager.MODE_ALLOWED
 }
 
-fun overlayGranted(ctx: Context): Boolean = Settings.canDrawOverlays(ctx)
-
 fun batteryExempt(ctx: Context): Boolean =
     ctx.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(ctx.packageName)
 
 /** The `when` is exhaustive: a new Storage.Requirement won't compile until it's checked here. */
 fun requirementMet(ctx: Context, req: Storage.Requirement): Boolean = when (req) {
-    Storage.Requirement.USAGE_ACCESS -> usageAccessGranted(ctx)
-    Storage.Requirement.OVERLAY -> overlayGranted(ctx)
+    Storage.Requirement.ACCESSIBILITY -> accessibilityOn(ctx)
     Storage.Requirement.BATTERY -> batteryExempt(ctx)
 }
 
